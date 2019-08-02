@@ -29,7 +29,7 @@ warnings.filterwarnings("ignore")
 
 # Extract files containting 'instr' from tar.gz files and save in outdir.
 def extract_tar(dloc,outdir,instr):
-    fnames = glob.glob(dloc + r'/Data/*.tar.gz')
+    fnames = glob.glob(dloc + r'*.tar.gz')
     for f in fnames: 
         t = tarfile.open(f,'r')
         mems = t.getmembers()
