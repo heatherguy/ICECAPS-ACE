@@ -140,8 +140,15 @@ def get_opc(opc_n,d_loc,d1,d2):
 
     return opc
 
-TAWO_OPC = get_opc('TAWO',d_loc,yesterday,today)
-MSF_OPC = get_opc('MSF',d_loc,yesterday,today)
+try:
+    TAWO_OPC = get_opc('TAWO',d_loc,yesterday,today)
+except:
+    print('No TAWO OPC data')
+
+try:
+    MSF_OPC = get_opc('MSF',d_loc,yesterday,today)
+except:
+    print('No MSF OPC data')
 
 ######################################################################################
 
@@ -183,8 +190,6 @@ def get_skyopc(d_loc,d1,d2):
         f_data.close()
         for i in range(0,len(d)):
             line=d[i].split()
-            if len(line)<8:
-                continue
             if line[0] =='P':
                 if len(line)!=17:
                     c=0
@@ -199,6 +204,9 @@ def get_skyopc(d_loc,d1,d2):
                 pRp = int(line[10])
                 Int = int(line[16])
                 c=0
+            
+            elif len(line)!=9:
+                continue
 
             elif c==0: 
                 ch1=int(line[1])
@@ -262,7 +270,10 @@ def get_skyopc(d_loc,d1,d2):
     
     return skyopc
 
-SKYOPC = get_skyopc(d_loc,yesterday,today)
+try:
+    SKYOPC = get_skyopc(d_loc,yesterday,today)
+except:
+    print('No SKYOPC data')
 
 
 
@@ -425,11 +436,26 @@ if today.hour != 0:
     fig = plt.figure(figsize=(17,4))
     ax = fig.add_subplot(111)
     ax.grid(True)
-    ax.semilogy(cpc_dates,cpc_count, label='CPC (>5nm)',zorder=3,alpha=0.8)
-    ax.semilogy(MSF_OPC.index,MSF_OPC.total_counts,label = 'MSF OPC (0.38-17$\mu$m)',zorder=1)  
-    ax.semilogy(TAWO_OPC.index,TAWO_OPC.total_counts,label = 'TAWO OPC (0.38-17$\mu$m)',zorder=1)
-    ax.semilogy(SKYOPC.index,SKYOPC.SKYOPC_conc,label = 'Sky OPC (0.25-32$\mu$m)',zorder=1)
-    #ax.semilogy(CLASP.index,CLASP.total_counts,label = 'CLASP (raw)',zorder=4)
+    try:
+        ax.semilogy(cpc_dates,cpc_count, label='CPC (>5nm)',zorder=3,alpha=0.8)
+    except:
+        pass
+
+    try:
+        ax.semilogy(MSF_OPC.index,MSF_OPC.total_counts,label = 'MSF OPC (0.38-17$\mu$m)',zorder=1)  
+    except:
+        pass
+
+    try:
+        ax.semilogy(TAWO_OPC.index,TAWO_OPC.total_counts,label = 'TAWO OPC (0.38-17$\mu$m)',zorder=1)
+    except:
+        pass
+
+    try:
+        ax.semilogy(SKYOPC.index,SKYOPC.SKYOPC_conc,label = 'Sky OPC (0.25-32$\mu$m)',zorder=1)
+    except:
+        pass
+#ax.semilogy(CLASP.index,CLASP.total_counts,label = 'CLASP (raw)',zorder=4)
     ax.set_ylim(0,yulim)
     ax.set_ylabel('Total Particle Counts / cm$^3$')
     ax.set_title('Total Particle Counts: %s'%((dt.datetime.strftime(yesterday,'%Y-%m-%d')+' to '+dt.datetime.strftime(today,'%Y-%m-%d'))))
@@ -482,11 +508,14 @@ def get_dist(df,nbins,bounds):
     return mid_points,dNdlogd
 
 def plot_dist(dists,labels,xlims):
-    fig = plt.figure(figsize=(12,6))
+    fig = plt.figure(figsize=(12,8))
     ax = fig.add_subplot(111)
     ax.grid(True)
     for i in range(0,len(dists)):
-        ax.loglog(dists[i][0],dists[i][1],label=labels[i])
+        if not dists[i]:
+            continue
+        else:
+            ax.loglog(dists[i][0],dists[i][1],label=labels[i])
 
     ax.set_xlim(xlims[0],xlims[1])
     ax.set_xticks([0.35, 0.46, 0.66, 1, 1.7, 3,6.5,10, 16, 25, 40])
@@ -494,26 +523,45 @@ def plot_dist(dists,labels,xlims):
     ax.set_xlabel('Diameter (d) / $\mu$m')
     ax.set_ylabel('dN/dlogd (cc$^{-3}$)')
     ax.legend(loc='best',fontsize=10)
+    ax.set_title('Aerosol size distribution: %s'%((dt.datetime.strftime(yesterday,'%Y-%m-%d')+' to '+dt.datetime.strftime(today,'%Y-%m-%d'))))
     fig.tight_layout()
     fig.savefig(d_loc + 'Spectra_current.png')
     fig.clf()
     # return fig or save fig.
     
 # Subset counts.
-MSF_counts = MSF_OPC[MSF_OPC.columns[0:24]]
-MSF_counts = MSF_counts.apply(pd.to_numeric, errors='coerce')
+try:
+    MSF_counts = MSF_OPC[MSF_OPC.columns[0:24]]
+    MSF_counts = MSF_counts.apply(pd.to_numeric, errors='coerce')
+except:
+    pass
 
-TAWO_counts = TAWO_OPC[TAWO_OPC.columns[0:24]]
-TAWO_counts = TAWO_counts.apply(pd.to_numeric, errors='coerce')
-
-SKYOPC_counts = SKYOPC[SKYOPC.columns[0:31]]
-SKYOPC_counts = SKYOPC_counts.apply(pd.to_numeric, errors='coerce')
+try:
+    TAWO_counts = TAWO_OPC[TAWO_OPC.columns[0:24]]
+    TAWO_counts = TAWO_counts.apply(pd.to_numeric, errors='coerce')
+except:
+    pass
+try:
+    SKYOPC_counts = SKYOPC[SKYOPC.columns[0:31]]
+    SKYOPC_counts = SKYOPC_counts.apply(pd.to_numeric, errors='coerce')
+except:
+    pass
 
 OPC_bins = 24
 OPC_bounds = [0.35, 0.46, 0.66, 1, 1.3, 1.7, 2.3, 3, 4, 5.2, 6.5, 8, 10, 12, 14, 16, 18, 20, 22, 25, 28, 31, 34, 37, 40]
 SKYOPC_bins = 31
 SKYOPC_bounds = [0.25,0.28,0.3,0.35,0.4,0.45,0.5,0.58,0.65,0.7,0.8,1.0,1.3,1.6,2,2.5,3,3.5,4,5,6.5,7.5,8.5,10,12.5,15,17.5,20,25,30,32,40]
-MSF_dist = get_dist(MSF_counts,OPC_bins,OPC_bounds)
-TAWO_dist = get_dist(TAWO_counts,OPC_bins,OPC_bounds)
-SKYOPC_dist= get_dist(SKYOPC_counts,SKYOPC_bins,SKYOPC_bounds)
-plot_dist([SKYOPC_dist,MSF_dist,TAWO_dist],['SKYOPC','MSF_OPC','TAWO_OPC'],[SKYOPC_bounds[0],SKYOPC_bounds[-1]])
+try:
+    MSF_dist = get_dist(MSF_counts,OPC_bins,OPC_bounds)
+except:
+    MSF_dist=[]
+try:
+    TAWO_dist = get_dist(TAWO_counts,OPC_bins,OPC_bounds)
+except:
+    TAWO_dist=[]
+try:    
+    SKYOPC_dist= get_dist(SKYOPC_counts,SKYOPC_bins,SKYOPC_bounds)
+except:
+    SKYOPC_dist=[]
+
+plot_dist([MSF_dist,TAWO_dist,SKYOPC_dist],['MSF_OPC','TAWO_OPC','SKYOPC'],[SKYOPC_bounds[0],SKYOPC_bounds[-1]])

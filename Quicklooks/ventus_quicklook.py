@@ -8,6 +8,7 @@ Created on Sat May 25 19:26:49 2019
 
 
 # Import functions
+from __future__ import print_function
 import matplotlib
 matplotlib.use('Agg')
 import warnings
@@ -26,6 +27,7 @@ import os
 import itertools
 import datetime
 import pandas as pd
+import io
 
 # Ventus parsing
 
@@ -77,30 +79,29 @@ def extract_ventus_data(start,stop,dpath,log_ventus):
         if os.path.getsize(f)==0:
             log.write('Error with: '+f+' this file is empty.\n')
             continue
-        # Filter and report files with non-ascii characters
-        try:
-            content = open(f).read()
-        except:
-            print('Data error with %s'%f)
-            continue
-        try:
-            content.encode('ascii')
-        except UnicodeDecodeError:
-            log.write("Error with: %s contains non-ascii characters.\n"%f)  
-            continue
             
         if f[-1]=='1':
             try:
-                v1 = v1.append(pd.read_csv(f, header=None, delim_whitespace=True, error_bad_lines=False))
-            except:
-                print('Data error with %s'%f)
-                continue
+                v1 = v1.append(pd.read_csv(f, header=None, delim_whitespace=True, error_bad_lines=False,encoding='utf_8'))
+            except UnicodeDecodeError:
+                nonascii = bytearray(range(0x80, 0x100))
+                with open(f,'rb') as infile, open(f+'.parsed','wb') as outfile:
+                    for line in infile: # b'\n'-separated lines (Linux, OSX, Windows)
+                        outfile.write(line.translate(None, nonascii))
+
+                v1 = v1.append(pd.read_csv(f+'.parsed', header=None, delim_whitespace=True, error_bad_lines=False,encoding='utf_8'))
+
         if f[-1]=='2':
             try:
                 v2 = v2.append(pd.read_csv(f, header=None, delim_whitespace=True, error_bad_lines=False))
-            except:
-                print('Data error with %s'%f)
-                continue
+            except UnicodeDecodeError:
+                nonascii = bytearray(range(0x80, 0x100))
+                with open(f,'rb') as infile, open(f+'.parsed','wb') as outfile:
+                    for line in infile: # b'\n'-separated lines (Linux, OSX, Windows)
+                        outfile.write(line.translate(None, nonascii))
+
+                v2 = v2.append(pd.read_csv(f+'.parsed', header=None, delim_whitespace=True, error_bad_lines=False,encoding='utf_8'))
+
         
     # Sort out the date referencing and columns
     v1 = ventus_pdf_sort(v1,start_f,stop_f)
@@ -120,6 +121,8 @@ rcParams.update({'font.size': 9})
 # Location data and plotting scripts
 dpath = '/home/data/'
 log_ventus =  '/home/fluxtower/Quicklooks/ventus_parse_log'
+#dpath = '/Users/heather/ICECAPS-ACE/Data/'
+#log_ventus =  '/Users/heather/ICECAPS-ACE/Quicklooks/ventus_parse_log'
 
 # For Licor and winds, plot one day previous
 day_stop = dt.datetime.today()
@@ -149,33 +152,56 @@ if len(v2)!=0:
 else:
     print('!! No V2 data !!')
 
-v1.wdir = v1.wdir.astype(str)
-v1 = v1[~v1.wdir.str.contains("F")]
-v1.wdir = v1.wdir.astype(int)
-v2.wdir = v2.wdir.astype(str)
-v2 = v2[~v2.wdir.str.contains("F")]
-v2.wdir = v2.wdir.astype(int)
+try:
+    v1.wdir = v1.wdir.astype(str)
+    v1 = v1[~v1.wdir.str.contains("F")]
+    v1.wdir = v1.wdir.astype(int)
+    v1.wsd = v1.wsd.astype(str)
+    v1.wsd = v1.wsd.str.lstrip('\x03\x02')
+    v1=v1[v1['wsd'].str.len()==4]
+    v1.wsd = v1.wsd.astype(float)
+except:
+    print('Issues with v1 with conversions')
+    pass
 
-v1.wsd = v1.wsd.astype(str)
-v1.wsd = v1.wsd.str.lstrip('\x03\x02')
-v1.wsd = v1.wsd.astype(float)
-v2.wsd = v2.wsd.astype(str)
-v2.wsd = v2.wsd.str.lstrip('\x03\x02')
-v2.wsd = v2.wsd.astype(float)
+try:
+    v2.wdir = v2.wdir.astype(str)
+    v2 = v2[~v2.wdir.str.contains("F")]
+    v2.wdir = v2.wdir.astype(int)
+    v2.wsd = v2.wsd.astype(str)
+    v2.wsd = v2.wsd.str.lstrip('\x03\x02')
+    v2=v2[v2['wsd'].str.len()==4]
+    v2.wsd = v2.wsd.astype(float)
+except:
+    print('Issues with v2 with conversions')
+    pass
+
 
  # ventus plot
 
 fig = plt.figure(figsize=fig_size)
 ax1 = fig.add_subplot(211)
-ax1.plot(v1.index,v1.wsd,c='b',label='v1',alpha=0.5)
-ax1.plot(v2.index,v2.wsd,c='r',label='v2',alpha=0.5)
+try:
+    ax1.plot(v1.index,v1.wsd,c='b',label='v1',alpha=0.5)
+except:
+    pass
+try:
+    ax1.plot(v2.index,v2.wsd,c='r',label='v2',alpha=0.5)
+except:
+    pass
 ax1.grid('on')
 ax1.set_ylabel('Wind Speed (m/s)')
 ax1.legend(fontsize='x-small')
 
 ax2 = fig.add_subplot(212,sharex=ax1)
-ax2.plot(v1.index,v1.wdir,c='b',alpha=0.5)
-ax2.plot(v2.index,v2.wdir,c='r',alpha=0.5)
+try:
+    ax2.plot(v1.index,v1.wdir,c='b',alpha=0.5)
+except:
+    pass
+try:
+    ax2.plot(v2.index,v2.wdir,c='r',alpha=0.5)
+except:
+    pass
 ax2.grid('on')
 ax2.set_ylim(0,360)
 ax2.set_yticks([0,90,180,270,360])
