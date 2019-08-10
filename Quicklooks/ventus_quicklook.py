@@ -119,10 +119,10 @@ rcParams['ytick.direction'] = 'in'
 rcParams.update({'font.size': 9}) 
 
 # Location data and plotting scripts
-dpath = '/home/data/'
-log_ventus =  '/home/fluxtower/Quicklooks/ventus_parse_log'
-#dpath = '/Users/heather/ICECAPS-ACE/Data/'
-#log_ventus =  '/Users/heather/ICECAPS-ACE/Quicklooks/ventus_parse_log'
+#dpath = '/home/data/'
+#log_ventus =  '/home/fluxtower/Quicklooks/ventus_parse_log'
+dpath = '/Users/heather/ICECAPS-ACE/Data/'
+log_ventus =  '/Users/heather/ICECAPS-ACE/Quicklooks/ventus_parse_log'
 
 # For Licor and winds, plot one day previous
 day_stop = dt.datetime.today()
@@ -155,18 +155,20 @@ else:
 try:
     v1.wdir = v1.wdir.astype(str)
     v1 = v1[~v1.wdir.str.contains("F")]
+    v1['wdir'] = pd.to_numeric(v1['wdir'], errors='coerce')
     v1.wdir = v1.wdir.astype(int)
     v1.wsd = v1.wsd.astype(str)
     v1.wsd = v1.wsd.str.lstrip('\x03\x02')
     v1=v1[v1['wsd'].str.len()==4]
     v1.wsd = v1.wsd.astype(float)
 except:
-    print('Issues with v1 with conversions')
+    print('Issues with v1 wind conversions')
     pass
 
 try:
     v2.wdir = v2.wdir.astype(str)
     v2 = v2[~v2.wdir.str.contains("F")]
+    v2['wdir'] = pd.to_numeric(v2['wdir'], errors='coerce')
     v2.wdir = v2.wdir.astype(int)
     v2.wsd = v2.wsd.astype(str)
     v2.wsd = v2.wsd.str.lstrip('\x03\x02')
@@ -215,8 +217,8 @@ ax1.xaxis.set_major_formatter(myFmt)
 plt.setp(ax1.get_xticklabels(), visible=False)
 fig.tight_layout()
 print('Saving Ventus plot..')
-fig.savefig('/home/fluxtower/Quicklooks/ventus_current.png')
-fig.clf()
+#fig.savefig('/home/fluxtower/Quicklooks/ventus_current.png')
+#fig.clf()
 
 
 

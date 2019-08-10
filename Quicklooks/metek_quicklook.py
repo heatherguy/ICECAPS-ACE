@@ -92,14 +92,27 @@ def extract_metek_data(start,stop,dpath,log_metek):
             try:
                 m1 = m1.append(pd.read_csv(f, header=None, delim_whitespace=True,usecols=[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17], error_bad_lines=False))
             except:
-                print('Data error with %s'%f)
-                continue
+                skiprows=1
+                datapass=0
+                while datapass==0:
+                    try:
+                        m1 = m1.append(pd.read_csv(f, header=None, delim_whitespace=True,usecols=[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17], error_bad_lines=False,skiprows=skiprows))
+                        datapass=1
+                    except:
+                        skiprows=skiprows+1
+
         if f[-1]=='2':
             try:
                 m2 = m2.append(pd.read_csv(f, header=None, delim_whitespace=True,usecols=[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17], error_bad_lines=False))
             except:
-                print('Data error with %s'%f)
-                continue
+                skiprows=1
+                datapass=0
+                while datapass==0:
+                    try:
+                        m2 = m2.append(pd.read_csv(f, header=None, delim_whitespace=True,usecols=[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17], error_bad_lines=False,skiprows=skiprows))
+                        datapass=1
+                    except:
+                        skiprows=skiprows+1
                
         
     # Sort out the date referencing and columns
@@ -117,6 +130,8 @@ rcParams.update({'font.size': 9})
 # Location data and plotting scripts
 dpath = '/home/data/'
 log_metek =  '/home/fluxtower/Quicklooks/metek_parse_log'
+#dpath = '/Users/heather/ICECAPS-ACE/Data/'
+#log_metek =  '/Users/heather/ICECAPS-ACE/Quicklooks/metek_parse_log'
 
 # For Licor and winds, plot one day previous
 day_stop = dt.datetime.today()
