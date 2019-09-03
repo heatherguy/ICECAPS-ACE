@@ -35,10 +35,10 @@ def metek_pdf_sort(df,start,stop):
         df['ms']= df[5]*1000000
         df['ms']= df['ms'].astype(int)
         df[0] = df[0].astype(str)
-        df[1] = df[1].astype(str)
-        df[2] = df[2].astype(str)
-        df[3] = df[3].astype(str)
-        df[4] = df[4].astype(str)
+        df[1] = df[1].astype(str).apply(lambda x: x.zfill(2))
+        df[2] = df[2].astype(str).apply(lambda x: x.zfill(2))
+        df[3] = df[3].astype(str).apply(lambda x: x.zfill(2))
+        df[4] = df[4].astype(str).apply(lambda x: x.zfill(2))
         df['ms'] = df['ms'].astype(str)        
         df['Date'] = pd.to_datetime(df[0]+df[1]+df[2]+df[3]+df[4]+df['ms'],format='%Y%m%d%H%M%f')
         df = df.set_index('Date')
@@ -92,27 +92,14 @@ def extract_metek_data(start,stop,dpath,log_metek):
             try:
                 m1 = m1.append(pd.read_csv(f, header=None, delim_whitespace=True,usecols=[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17], error_bad_lines=False))
             except:
-                skiprows=1
-                datapass=0
-                while datapass==0:
-                    try:
-                        m1 = m1.append(pd.read_csv(f, header=None, delim_whitespace=True,usecols=[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17], error_bad_lines=False,skiprows=skiprows))
-                        datapass=1
-                    except:
-                        skiprows=skiprows+1
-
+                print('Data error with %s'%f)
+                continue
         if f[-1]=='2':
             try:
                 m2 = m2.append(pd.read_csv(f, header=None, delim_whitespace=True,usecols=[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17], error_bad_lines=False))
             except:
-                skiprows=1
-                datapass=0
-                while datapass==0:
-                    try:
-                        m2 = m2.append(pd.read_csv(f, header=None, delim_whitespace=True,usecols=[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17], error_bad_lines=False,skiprows=skiprows))
-                        datapass=1
-                    except:
-                        skiprows=skiprows+1
+                print('Data error with %s'%f)
+                continue
                
         
     # Sort out the date referencing and columns
@@ -132,6 +119,7 @@ dpath = '/home/data/'
 log_metek =  '/home/fluxtower/Quicklooks/metek_parse_log'
 #dpath = '/Users/heather/ICECAPS-ACE/Data/'
 #log_metek =  '/Users/heather/ICECAPS-ACE/Quicklooks/metek_parse_log'
+
 
 # For Licor and winds, plot one day previous
 day_stop = dt.datetime.today()

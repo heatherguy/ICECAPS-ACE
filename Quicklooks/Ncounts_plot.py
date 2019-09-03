@@ -33,6 +33,9 @@ rule = md.HourLocator(interval=1)
 
 #d_loc='/Users/heather/Desktop/aerosol_quicklooks/'
 d_loc = '/home/fluxtower/'
+calfile = '/home/fluxtower/CLASP-ICECAP-ACE/CLASP-cal-Feb2019/calibration-unit-F-Feb2019.mat' 
+#calfile = '/Users/heather/Desktop/Summit_May_2019/Instruments/CLASP/CLASP-cal-Feb2019/calibration-unit-F-Feb2019.mat' # Calibration .mat file
+
 
 # Function to get just the last lines of a file
 
@@ -298,20 +301,22 @@ def get_clasp(d_loc,d1,d2,claspn,channels,calfile,sf):
         fid = open(f)
         data_block.append(list(filter(('\n').__ne__, fid.readlines())))
         fid.close()
+        
+    data_block=list(np.concatenate(data_block))
      
     # Initialise empty dataframes
     dates = []
-    CLASP = np.ones([np.shape(data_block)[1],16])*-999  # Counts
-    statusaddr = np.ones(np.shape(data_block)[1])*-999  # Status address
-    parameter = np.ones(np.shape(data_block)[1])*-999   # Parameter value
-    overflow = np.ones(np.shape(data_block)[1])*-999    # Overflow (channel 1-8 only)
+    CLASP = np.ones([np.shape(data_block)[0],16])*-999  # Counts
+    statusaddr = np.ones(np.shape(data_block)[0])*-999  # Status address
+    parameter = np.ones(np.shape(data_block)[0])*-999   # Parameter value
+    overflow = np.ones(np.shape(data_block)[0])*-999    # Overflow (channel 1-8 only)
     #flow_check = np.ones(len(data_block))*-999  # True if flow is in range - this is too stringent, can ignore
-    heater = np.ones(np.shape(data_block)[1])*-999      # True if heater is on
+    heater = np.ones(np.shape(data_block)[0])*-999      # True if heater is on
     #sync = np.ones(len(data_block))*-999       # CAN IGNORE THIS - it's not connected
 
     # Loop through, extract and sort data into the dataframes initialised above
-    for i in range(0,np.shape(data_block)[1]):
-        split = data_block[0][i].split()
+    for i in range(0,np.shape(data_block)[0]):
+        split = data_block[i].split()
         # Extract and store dates
         date = dt.datetime(int(split[0]),int(split[1]),int(split[2]),
                            int(split[3]),int(split[4]),
@@ -323,7 +328,7 @@ def get_clasp(d_loc,d1,d2,claspn,channels,calfile,sf):
     
         # Extract and store counts
         for x in range(0,16):
-            CLASP[i,x] = float(split[-17:-1][x])    
+            CLASP[i,x] = float(split[-16:][x])    
     
         # Extract, and convert staus addresses, store flags
         statusbyte=float(split[6])
@@ -344,84 +349,83 @@ def get_clasp(d_loc,d1,d2,claspn,channels,calfile,sf):
                 CLASP[i,n] = CLASP[i,n] + 256
                 
         # Arrange parameters into a neat dataframe
-    #param_len = len(statusaddr)/10
-    #param_dates = np.asarray(dates)[np.where(statusaddr==0)[0][0:param_len]]
-    #if len(param_dates)<param_len:
-      #  param_len = len(param_dates)
-      #  rejects = parameter[np.where(statusaddr==0)[0][0:param_len]]
-      #  threshold = parameter[np.where(statusaddr==1)[0][0:param_len]]
-      #  ThisFlow = parameter[np.where(statusaddr==2)[0][0:param_len]]
-      #  FlowPWM = parameter[np.where(statusaddr==3)[0][0:param_len]]
-      #  PumpCurrent = parameter[np.where(statusaddr==4)[0][0:param_len]]
-      #  SensorT = parameter[np.where(statusaddr==5)[0][0:param_len]]
-      #  HousingT = parameter[np.where(statusaddr==6)[0][0:param_len]]
-      #  PumpT = parameter[np.where(statusaddr==7)[0][0:param_len]]
-      #  SupplyV = parameter[np.where(statusaddr==8)[0][0:param_len]]
-     #   LaserR  = parameter[np.where(statusaddr==9)[0][0:param_len]]
+    param_len = int(len(statusaddr)/10)
+    param_dates = np.asarray(dates)[np.where(statusaddr==0)[0][0:param_len]]
+    if len(param_dates)<param_len:
+        param_len = len(param_dates)
+    
+    rejects = parameter[np.where(statusaddr==0)[0][0:param_len]]
+    threshold = parameter[np.where(statusaddr==1)[0][0:param_len]]
+    ThisFlow = parameter[np.where(statusaddr==2)[0][0:param_len]]
+    FlowPWM = parameter[np.where(statusaddr==3)[0][0:param_len]]
+    PumpCurrent = parameter[np.where(statusaddr==4)[0][0:param_len]]
+    SensorT = parameter[np.where(statusaddr==5)[0][0:param_len]]
+    HousingT = parameter[np.where(statusaddr==6)[0][0:param_len]]
+    PumpT = parameter[np.where(statusaddr==7)[0][0:param_len]]
+    SupplyV = parameter[np.where(statusaddr==8)[0][0:param_len]]
+    LaserR  = parameter[np.where(statusaddr==9)[0][0:param_len]]
 
-    #param_df=pd.DataFrame({'Date':param_dates,'Rejects (n)':rejects,'Threshold (mV)':threshold,
-    #                    'ThisFlow':ThisFlow,'FlowPWM':FlowPWM,'PumpCurrent (mA)':PumpCurrent,
-    #                    'SensorT (C)':SensorT,'HousingT (C)':HousingT,'PumpT (C)':PumpT,
-    #                    'SupplyV':SupplyV,'LaserR':LaserR})
+    param_df=pd.DataFrame({'Date':param_dates,'Rejects (n)':rejects,'Threshold (mV)':threshold,
+                        'ThisFlow':ThisFlow,'FlowPWM':FlowPWM,'PumpCurrent (mA)':PumpCurrent,
+                        'SensorT (C)':SensorT,'HousingT (C)':HousingT,'PumpT (C)':PumpT,
+                        'SupplyV':SupplyV,'LaserR':LaserR})
 
-    #param_df = param_df.set_index('Date')
-    #param_df.index = pd.DatetimeIndex(param_df.index)
+    param_df = param_df.set_index('Date')
+    param_df.index = pd.DatetimeIndex(param_df.index)
+    param_df = param_df[~param_df.index.duplicated()]
 
     # Arrange Counts into a neat dataframe
     CLASP_df = pd.DataFrame({'Date':dates, 'Heater flag':heater,
-                        'c1 (n/s)':CLASP[:,0],'c2 (n/s)':CLASP[:,1],
-                        'c3 (n/s)':CLASP[:,2],'c4 (n/s)':CLASP[:,3], 'c5 (n/s)':CLASP[:,4],
-                        'c6 (n/s)':CLASP[:,5],'c7 (n/s)':CLASP[:,6],'c8 (n/s)':CLASP[:,7],'c9 (n/s)':CLASP[:,8],
-                        'c10 (n/s)':CLASP[:,9],'c11 (n/s)':CLASP[:,10],'c12 (n/s)':CLASP[:,11], 
-                        'c13 (n/s)':CLASP[:,12],'c14 (n/s)':CLASP[:,13],'c15 (n/s)':CLASP[:,14],'c16 (n/s)':CLASP[:,15]})
+                        1:CLASP[:,0],2:CLASP[:,1],
+                        3:CLASP[:,2],4:CLASP[:,3], 5:CLASP[:,4],
+                        6:CLASP[:,5],7:CLASP[:,6],8:CLASP[:,7],9:CLASP[:,8],
+                        10:CLASP[:,9],11:CLASP[:,10],12:CLASP[:,11], 
+                        13:CLASP[:,12],14:CLASP[:,13],15:CLASP[:,14],16:CLASP[:,15]})
     CLASP_df = CLASP_df.set_index('Date')
     CLASP_df.index = pd.DatetimeIndex(CLASP_df.index)
-    #CLASP_df = pd.concat([CLASP_df, param_df], axis=1)
+    CLASP_df = CLASP_df[~CLASP_df.index.duplicated()]
+    CLASP_df = pd.concat([CLASP_df, param_df], axis=1)
 
     # Apply flow corrections and quality flags, 
     # convert raw counts to concentrations in particles per ml.
     # Get calibration data
-    #cal_dict=io.loadmat(calfile,matlab_compatible=True)
-    #TSIflow = cal_dict['calibr'][0][0][8][0]         # array of calibration flow rates from TSI flow meter
-    #realflow = cal_dict['calibr'][0][0][9][0]        # array of measured A2D flow rates matching TSflow
+    cal_dict=io.loadmat(calfile,matlab_compatible=True)
+    TSIflow = cal_dict['calibr'][0][0][8][0]         # array of calibration flow rates from TSI flow meter
+    realflow = cal_dict['calibr'][0][0][9][0]        # array of measured A2D flow rates matching TSflow
 
     # Do flow correction and convert to concentations
     # TSI flow is from the TSI flowmeter, realflow is the flow the CLASP records internally
-    #P = np.polyfit(realflow,TSIflow,2) # These are from the flow calibration - fit a polynomial
-    #flow = np.polyval(P,CLASP_df['ThisFlow']) # flow in L/min
-    #flow_correction = ((flow/60)*1000)/sf # Sample volume in ml/s
+    P = np.polyfit(realflow,TSIflow,2) # These are from the flow calibration - fit a polynomial
+    flow = np.polyval(P,CLASP_df['ThisFlow']) # flow in L/min
+    flow_correction = ((flow/60)*1000)/sf # Sample volume in ml/s
 
     # Interpolate flow correction onto full timeseries and add to array
-    #def nan_helper(y):
-    #    return np.isnan(y), lambda z: z.nonzero()[0]
-    #nans, x= nan_helper(flow_correction)
-    #flow_correction[nans]= np.interp(x(nans), x(~nans), flow_correction[~nans])
-    #CLASP_df['Sample volume (ml/s)']=flow_correction
+    def nan_helper(y):
+        return np.isnan(y), lambda z: z.nonzero()[0]
+    nans, x= nan_helper(flow_correction)
+    flow_correction[nans]= np.interp(x(nans), x(~nans), flow_correction[~nans])
+    CLASP_df['Sample volume (ml/s)']=flow_correction
 
     # Now to plot concentrations in counts/ml, just need to divide the counts/s by the sample volume
-    CLASP_df['total_counts']=CLASP_df['c1 (n/s)'].astype(float)+ CLASP_df['c2 (n/s)'].astype(float)+CLASP_df['c3 (n/s)'].astype(float)+CLASP_df['c4 (n/s)'].astype(float)+CLASP_df['c5 (n/s)'].astype(float)+CLASP_df['c6 (n/s)'].astype(float)+CLASP_df['c7 (n/s)'].astype(float)+CLASP_df['c8 (n/s)'].astype(float)+CLASP_df['c9 (n/s)'].astype(float)+CLASP_df['c10 (n/s)'].astype(float)+CLASP_df['c11 (n/s)'].astype(float)+CLASP_df['c12 (n/s)'].astype(float)+CLASP_df['c13 (n/s)'].astype(float)+CLASP_df['c14 (n/s)'].astype(float)+CLASP_df['c15 (n/s)'].astype(float)+CLASP_df['c16 (n/s)'].astype(float)
+    CLASP_df['total_counts']=CLASP_df[1].astype(float)+ CLASP_df[2].astype(float)+CLASP_df[3].astype(float)+CLASP_df[4].astype(float)+CLASP_df[5].astype(float)+CLASP_df[6].astype(float)+CLASP_df[7].astype(float)+CLASP_df[8].astype(float)+CLASP_df[9].astype(float)+CLASP_df[10].astype(float)+CLASP_df[11].astype(float)+CLASP_df[12].astype(float)+CLASP_df[13].astype(float)+CLASP_df[14].astype(float)+CLASP_df[15].astype(float)+CLASP_df[16].astype(float)
     # CLASP-G flowrate = 3L/minute = 50 cm3/second
     # Units: particle counts/ sample interval
     # Sample interval: 1s
     # Calculate total counts
     # Calculate concentation
     
-    #CLASP_df['CLASP_conc'] = CLASP_df['total_counts'] / 50 #counts/cm3
+    CLASP_df['CLASP_conc'] = CLASP_df['total_counts'] / 50 #counts/cm3
     
     return CLASP_df
 
 
-#channels = 16 # Number of aerosol concentration channels (usually 16)
-#calfile = '/home/fluxtower/CLASP-ICECAP-ACE/CLASP-cal-Feb2019/calibration-unit-F-Feb2019.mat' 
-#calfile = '/Users/heather/Desktop/Summit_May_2019/Instruments/CLASP/CLASP-cal-Feb2019/calibration-unit-G-Feb2019.mat' # Calibration .mat file
-#CLASP = get_clasp(d_loc,yesterday,today,'CLASP_F',16,calfile,1)
-
-
-
-
+channels = 16 # Number of aerosol concentration channels (usually 16)
+try:
+    CLASP = get_clasp(d_loc,yesterday,today,'CLASP_F',16,calfile,1)
+except:
+    print('No CLASP data')
 
 ###############################################################################
-
 
 # Set up y lim
 max_counts = max(cpc_count)
@@ -432,59 +436,46 @@ else:
 
 # Plot & save
 
-if today.hour != 0: 
-    fig = plt.figure(figsize=(17,4))
-    ax = fig.add_subplot(111)
-    ax.grid(True)
-    try:
-        ax.semilogy(cpc_dates,cpc_count, label='CPC (>5nm)',zorder=3,alpha=0.8)
-    except:
-        pass
 
-    try:
-        ax.semilogy(MSF_OPC.index,MSF_OPC.total_counts,label = 'MSF OPC (0.38-17$\mu$m)',zorder=1)  
-    except:
-        pass
-
-    try:
-        ax.semilogy(TAWO_OPC.index,TAWO_OPC.total_counts,label = 'TAWO OPC (0.38-17$\mu$m)',zorder=1)
-    except:
-        pass
-
-    try:
-        ax.semilogy(SKYOPC.index,SKYOPC.SKYOPC_conc,label = 'Sky OPC (0.25-32$\mu$m)',zorder=1)
-    except:
-        pass
-#ax.semilogy(CLASP.index,CLASP.total_counts,label = 'CLASP (raw)',zorder=4)
-    ax.set_ylim(0,yulim)
-    ax.set_ylabel('Total Particle Counts / cm$^3$')
-    ax.set_title('Total Particle Counts: %s'%((dt.datetime.strftime(yesterday,'%Y-%m-%d')+' to '+dt.datetime.strftime(today,'%Y-%m-%d'))))
-    ax.set_xlabel('Hours (UTC)')
-    ax.xaxis.set_major_formatter(myFmt)
-    ax.xaxis.set_major_locator(rule)
-    ax.set_xlim(yesterday,today)
-    ax.legend(loc='best',fontsize=10)
-    fig.tight_layout()
-    fig.savefig(d_loc + 'Ncounts_current.png')
-else:            
-    fig = plt.figure(figsize=(17,4))
-    ax = fig.add_subplot(111)
-    ax.grid(True)
+fig = plt.figure(figsize=(17,4))
+ax = fig.add_subplot(111)
+ax.grid(True)
+try:
     ax.semilogy(cpc_dates,cpc_count, label='CPC (>5nm)',zorder=3,alpha=0.8)
-    ax.semilogy(MSF_OPC.index,MSF_OPC.total_counts,label = 'MSF OPC (0.38-17$\mu$m)',zorder=1)  
-    ax.semilogy(TAWO_OPC.index,TAWO_OPC.total_counts,label = 'TAWO OPC (0.38-17$\mu$m)',zorder=1)
-    ax.semilogy(SKYOPC.index,SKYOPC.SKYOPC_conc,label = 'Sky OPC (0.25-32$\mu$m)',zorder=1)
-    #ax.semilogy(CLASP.index,CLASP.CLASP_conc,label = 'CLASP',zorder=1)
-    ax.set_ylim(0,yulim)
-    ax.set_ylabel('Total Particle Counts / cm$^3$')
-    ax.set_title('Total Particle Counts: %s'%dt.datetime.strftime(yesterday,'%Y-%m-%d'))
-    ax.set_xlabel('Hours (UTC)')
-    ax.xaxis.set_major_formatter(myFmt)
-    ax.xaxis.set_major_locator(rule)
-    ax.set_xlim(yesterday,today)
-    ax.legend(loc='best',fontsize=10)
-    fig.tight_layout()
-    fig.savefig(d_loc + 'Ncounts_plot_archive/Ncounts_%s.png'%dt.datetime.strftime(yesterday,'%Y-%m-%d'))
+except:
+    pass
+
+try:
+    ax.semilogy(MSF_OPC.index,MSF_OPC.total_counts,label = 'MSF OPC (0.38-17$\mu$m)',zorder=4)  
+except:
+    pass
+
+try:
+    ax.semilogy(TAWO_OPC.index,TAWO_OPC.total_counts,label = 'TAWO OPC (0.38-17$\mu$m)',zorder=2)
+except:
+    pass
+
+try:
+    ax.semilogy(SKYOPC.index,SKYOPC.SKYOPC_conc,label = 'Sky OPC (0.25-32$\mu$m)',zorder=3)
+except:
+    pass
+
+try:
+    ax.semilogy(CLASP.index,CLASP.total_counts,label = 'CLASP',zorder=1)
+except:
+    print('failed at semilogy CLASP')
+    pass
+    
+ax.set_ylim(0,1000)
+ax.set_ylabel('Total Particle Counts / cm$^3$')
+ax.set_title('Total Particle Counts: %s'%((dt.datetime.strftime(yesterday,'%Y-%m-%d')+' to '+dt.datetime.strftime(today,'%Y-%m-%d'))))
+ax.set_xlabel('Hours (UTC)')
+ax.xaxis.set_major_formatter(myFmt)
+ax.xaxis.set_major_locator(rule)
+ax.set_xlim(yesterday,today)
+ax.legend(loc='best',fontsize=10)
+fig.tight_layout()
+fig.savefig(d_loc + 'Ncounts_current.png')
 
 fig.clf()
 
@@ -529,6 +520,27 @@ def plot_dist(dists,labels,xlims):
     fig.clf()
     # return fig or save fig.
     
+def plot_dist_time(d1,d2,dates,counts,bins,name,vmax):
+    fig = plt.figure(figsize=(17,5))
+    ax = fig.add_subplot(111)
+    cs = plt.pcolormesh(dates,np.arange(0,len(bins)-1,1),np.transpose(counts),vmin=0,vmax=vmax)
+    cb = plt.colorbar(cs,extend='max',label='Counts/ cc',orientation='horizontal',pad=0.18,aspect=50,shrink=0.7)
+    ax.xaxis_date()
+    ax.set_title('%s: %s'%(name,(dt.datetime.strftime(d1,'%Y-%m-%d')+' to '+dt.datetime.strftime(d2,'%Y-%m-%d'))))
+    ax.set_yticks(np.arange(0,len(bins)-1,1))
+    ax.tick_params(axis='y', which='major', labelsize=10) 
+    for label in ax.yaxis.get_ticklabels()[::2]:
+        label.set_visible(False)
+    ax.set_yticklabels(bins)
+    ax.set_ylabel('Particle Size ($\mu$m)')
+    ax.set_xlabel('Hours UTC')
+    ax.set_xlim(d1,d2)
+    ax.xaxis.set_major_formatter(myFmt)
+    ax.xaxis.set_major_locator(rule)   
+    fig.tight_layout()
+    fig.savefig(d_loc + '%s_timeseries_current.png'%name)
+    fig.clf()
+    
 # Subset counts.
 try:
     MSF_counts = MSF_OPC[MSF_OPC.columns[0:24]]
@@ -546,11 +558,22 @@ try:
     SKYOPC_counts = SKYOPC_counts.apply(pd.to_numeric, errors='coerce')
 except:
     pass
+try:
+    CLASP_counts = CLASP[CLASP.columns[1:17]]
+    CLASP_counts = CLASP_counts.apply(pd.to_numeric, errors='coerce')
+except:
+    print('failed at clasp counts conversion')
+    pass
 
 OPC_bins = 24
 OPC_bounds = [0.35, 0.46, 0.66, 1, 1.3, 1.7, 2.3, 3, 4, 5.2, 6.5, 8, 10, 12, 14, 16, 18, 20, 22, 25, 28, 31, 34, 37, 40]
 SKYOPC_bins = 31
 SKYOPC_bounds = [0.25,0.28,0.3,0.35,0.4,0.45,0.5,0.58,0.65,0.7,0.8,1.0,1.3,1.6,2,2.5,3,3.5,4,5,6.5,7.5,8.5,10,12.5,15,17.5,20,25,30,32,40]
+CLASP_bins=16
+CLASP_bounds=[0.3,0.4,0.5,0.6,0.7,1,2,3,4,5,6,7,8,9,10,12,14.3] # Note clasp bounds are radii
+CLASP_bounds=list(np.asarray(CLASP_bounds)/2)
+
+
 try:
     MSF_dist = get_dist(MSF_counts,OPC_bins,OPC_bounds)
 except:
@@ -563,5 +586,44 @@ try:
     SKYOPC_dist= get_dist(SKYOPC_counts,SKYOPC_bins,SKYOPC_bounds)
 except:
     SKYOPC_dist=[]
+try:    
+    CLASP_dist= get_dist(CLASP_counts,CLASP_bins,CLASP_bounds)
+except:
+    CLASP_dist=[]
 
-plot_dist([MSF_dist,TAWO_dist,SKYOPC_dist],['MSF_OPC','TAWO_OPC','SKYOPC'],[SKYOPC_bounds[0],SKYOPC_bounds[-1]])
+plot_dist([MSF_dist,TAWO_dist,SKYOPC_dist,CLASP_dist],['MSF_OPC','TAWO_OPC','SKYOPC','CLASP'],[SKYOPC_bounds[0],SKYOPC_bounds[-1]])
+
+
+
+
+
+
+# Plot time series distributions: 
+try:
+    sky_counts = SKYOPC_counts.to_numpy()
+    sky_dates = np.array(SKYOPC_counts.index.to_pydatetime())
+    plot_dist_time(yesterday,today,sky_dates,sky_counts,SKYOPC_bounds,'SKYOPC',1000)
+except:
+    pass
+
+try:
+    opc_counts = MSF_counts.to_numpy()
+    opc_dates = np.array(MSF_counts.index.to_pydatetime())
+    plot_dist_time(yesterday,today,opc_dates,opc_counts,OPC_bounds,'MSF_OPC',150)
+except:
+    pass
+
+try:
+    opct_counts = TAWO_counts.to_numpy()
+    opct_dates = np.array(TAWO_counts.index.to_pydatetime())
+    plot_dist_time(yesterday,today,opct_dates,opct_counts,OPC_bounds,'TAWO_OPC',150)
+except:
+    pass
+
+try:
+    clasp_counts = CLASP_counts.to_numpy()
+    clasp_dates = np.array(CLASP_counts.index.to_pydatetime())
+    plot_dist_time(yesterday,today,clasp_dates,clasp_counts,CLASP_bounds,'CLASP_F',150)
+except:
+    pass
+

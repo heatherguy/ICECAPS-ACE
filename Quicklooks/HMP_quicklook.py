@@ -30,21 +30,27 @@ import pandas as pd
 
 def HMP_pdf_sort(df,start,stop):
     # Sort out the date referencing and columns
-	if df.empty==False:
-		df.dropna(inplace=True)
-		df[5] = df[5].astype(int)
-		df['Date'] = pd.to_datetime(df[0]*10000000000+df[1]*100000000+df[2]*1000000+df[3]*10000+df[4]*100+df[5],format='%Y%m%d%H%M%S')
-		df = df.set_index('Date')
-		del df[0],df[1],df[2],df[3],df[4],df[5],df[6]
-		df.columns = ['RH', 'Ta', 'Tw', 'Err', 'h']
-		df = df.sort_values('Date')
-		new_idx = pd.date_range(pd.to_datetime(str(start),format='%y%m%d'),pd.to_datetime(str(stop),format='%y%m%d')+dt.timedelta(days=1),freq='1s' )
-		df.index = pd.DatetimeIndex(df.index)
-		df = df[~df.index.duplicated()]
-		df= df.reindex(new_idx, fill_value=np.NaN)
-	else:
-        	df = pd.DataFrame(columns=['RH', 'Ta', 'Tw', 'Err', 'h'])
-	return df
+    if df.empty==False:
+        df.dropna(inplace=True)
+        df[0] = df[0].astype(int)
+        df[1] = df[1].astype(int)
+        df[2] = df[2].astype(int)
+        df[3] = df[3].astype(int)
+        df[4] = df[4].astype(int)  
+        df[5] = df[5].astype(int)
+        df['Date'] = pd.to_datetime(df[0]*10000000000+df[1]*100000000+df[2]*1000000+df[3]*10000+df[4]*100+df[5],format='%Y%m%d%H%M%S')
+        df = df.set_index('Date')
+        del df[0],df[1],df[2],df[3],df[4],df[5],df[6]
+        df.columns = ['RH', 'Ta', 'Tw', 'Err', 'h']
+        df = df.sort_values('Date')
+        new_idx = pd.date_range(pd.to_datetime(str(start),format='%y%m%d'),pd.to_datetime(str(stop),format='%y%m%d')+dt.timedelta(days=1),freq='1s' )
+        df.index = pd.DatetimeIndex(df.index)
+        df = df[~df.index.duplicated()]
+        df= df.reindex(new_idx, fill_value=np.NaN)
+
+    else:
+        df= pd.DataFrame(columns=['RH', 'Ta', 'Tw', 'Err', 'h'])
+    return df
 
 def extract_HMP_data(start,stop,dpath,logf):
     # Extract HMP155 data into a pandas array
@@ -109,11 +115,13 @@ def extract_HMP_data(start,stop,dpath,logf):
 
         
     # Sort out the date referencing and columns
+
     HMP1 = HMP_pdf_sort(HMP1,start_f,stop_f)
     HMP2 = HMP_pdf_sort(HMP2,start_f,stop_f)
     HMP3 = HMP_pdf_sort(HMP3,start_f,stop_f)
     HMP4 = HMP_pdf_sort(HMP4,start_f,stop_f)
     HMP5 = HMP_pdf_sort(HMP5,start_f,stop_f)
+
     log.write('Data parse finished\n')
     log.close()
     return HMP1,HMP2,HMP3,HMP4,HMP5
@@ -129,6 +137,8 @@ rcParams.update({'font.size': 9})
 # Location data and plotting scripts
 dpath = '/home/data/'
 log_hmp = '/home/fluxtower/Quicklooks/HMP_parse_log'
+#dpath = '/Users/heather/ICECAPS-ACE/Data'
+#log_hmp = '/Users/heather/ICECAPS-ACE/Quicklooks/HMP_parse_log'
 
 # For KT, SND: Plot one week previous from now
 week_stop = dt.datetime.today()

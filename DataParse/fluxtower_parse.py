@@ -308,15 +308,20 @@ def metek_pdf_sort(df,start,stop):
         df['ms']= df[5]*1000000
         df['ms']= df['ms'].astype(int)
         df[0] = df[0].astype(str)
-        df[1] = df[1].astype(str)
-        df[2] = df[2].astype(str)
-        df[3] = df[3].astype(str)
-        df[4] = df[4].astype(str)
+        df[1] = df[1].astype(str).apply(lambda x: x.zfill(2))
+        df[2] = df[2].astype(str).apply(lambda x: x.zfill(2))
+        df[3] = df[3].astype(str).apply(lambda x: x.zfill(2))
+        df[4] = df[4].astype(str).apply(lambda x: x.zfill(2))
         df['ms'] = df['ms'].astype(str)        
         df['Date'] = pd.to_datetime(df[0]+df[1]+df[2]+df[3]+df[4]+df['ms'],format='%Y%m%d%H%M%f')
         df = df.set_index('Date')
         del df[0],df[1],df[2],df[3],df[4],df[5],df['ms'],df[7],df[9],df[10],df[12],df[13],df[15],df[16]
         df.columns = ['Status','x','y','z','T']
+        df = df[pd.to_numeric(df['T'], errors='coerce').notnull()]        
+        df['T']=df['T'].astype(float)
+        df['x']=df['x'].astype(float)
+        df['y']=df['y'].astype(float)
+        df['z']=df['z'].astype(float)
         df['T']=df['T']/100
         df = df.sort_values('Date')
         #new_idx = pd.date_range(pd.to_datetime(str(start),format='%y%m%d'),pd.to_datetime(str(stop),format='%y%m%d'),freq='1s' )
@@ -360,9 +365,17 @@ def extract_metek_data(start,stop,dpath,log_metek):
             continue
         
         if f[-1]=='1':
-            m1 = m1.append(pd.read_csv(f, header=None, delim_whitespace=True, error_bad_lines=False))
+            try:
+                m1 = m1.append(pd.read_csv(f, header=None, delim_whitespace=True,usecols=[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17], error_bad_lines=False))
+            except:
+                print('Data error with %s'%f)
+                continue
         if f[-1]=='2':
-            m2 = m2.append(pd.read_csv(f, header=None, delim_whitespace=True, error_bad_lines=False))
+            try:
+                m2 = m2.append(pd.read_csv(f, header=None, delim_whitespace=True,usecols=[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17], error_bad_lines=False))
+            except:
+                print('Data error with %s'%f)
+                continue
                
         
     # Sort out the date referencing and columns
@@ -370,7 +383,7 @@ def extract_metek_data(start,stop,dpath,log_metek):
     m2 = metek_pdf_sort(m2,start_f,stop_f)
     log.write('Data parse finished\n')
     log.close()
-    return m1,m2    
+    return m1,m2     
 
 
 
