@@ -305,15 +305,18 @@ def extract_ventus_data(start,stop,dpath,log_ventus):
 def metek_pdf_sort(df,start,stop):
     # Sort out the date referencing and columns
     if df.empty==False:
-        df['ms']= df[5]*1000000
+        df['ms']= (df[5] - np.floor(df[5]))*1000000
         df['ms']= df['ms'].astype(int)
         df[0] = df[0].astype(str)
         df[1] = df[1].astype(str).apply(lambda x: x.zfill(2))
         df[2] = df[2].astype(str).apply(lambda x: x.zfill(2))
         df[3] = df[3].astype(str).apply(lambda x: x.zfill(2))
         df[4] = df[4].astype(str).apply(lambda x: x.zfill(2))
-        df['ms'] = df['ms'].astype(str)        
-        df['Date'] = pd.to_datetime(df[0]+df[1]+df[2]+df[3]+df[4]+df['ms'],format='%Y%m%d%H%M%f')
+        df[5] = np.floor(df[5]).astype(int)
+        df[5] = df[5].astype(str).apply(lambda x: x.zfill(2))
+        df['ms'] = df['ms'].astype(str).apply(lambda x: x.zfill(6))   
+        
+        df['Date'] = pd.to_datetime(df[0]+df[1]+df[2]+df[3]+df[4]+df[5]+df['ms'],format='%Y%m%d%H%M%S%f')
         df = df.set_index('Date')
         del df[0],df[1],df[2],df[3],df[4],df[5],df['ms'],df[7],df[9],df[10],df[12],df[13],df[15],df[16]
         df.columns = ['Status','x','y','z','T']
@@ -383,6 +386,11 @@ def extract_metek_data(start,stop,dpath,log_metek):
     m2 = metek_pdf_sort(m2,start_f,stop_f)
     log.write('Data parse finished\n')
     log.close()
+    
+    # crop data for date/time
+    m1=m1[start:stop]
+    m2=m2[start:stop]
+    
     return m1,m2     
 
 
