@@ -1,11 +1,13 @@
-
+#!/usr/bin/env python2
 # -*- coding: utf-8 -*-
 """
-@author: guyh
-"""
-import matplotlib
-matplotlib.use('Agg')
+Created on Fri Sep 13 22:32:23 2019
 
+@author: heather
+"""
+
+import matplotlib
+#matplotlib.use('Agg')
 import numpy as np
 import datetime as dt
 import matplotlib.pyplot as plt
@@ -17,89 +19,29 @@ import os
 import glob
 from scipy import io
 
-# Supress warnings for sake of log file
-import warnings
-warnings.filterwarnings("ignore")
-
-# Plotting preferences
-
-rcParams['xtick.direction'] = 'in'
-rcParams['ytick.direction'] = 'in'
-rcParams.update({'font.size': 14}) 
-rcParams['axes.titlepad'] = 14 
-rcParams['xtick.major.pad']='10'
-rcParams['ytick.major.pad']='10'
-myFmt = md.DateFormatter('%H')
-rule = md.HourLocator(interval=1)
-
-#d_loc='/Users/heather/Desktop/aerosol_quicklooks/'
-d_loc = '/home/fluxtower/'
-calfile = '/home/fluxtower/CLASP-ICECAP-ACE/CLASP-cal-Feb2019/calibration-unit-F-Feb2019.mat' 
-#calfile = '/Users/heather/Desktop/Summit_May_2019/Instruments/CLASP/CLASP-cal-Feb2019/calibration-unit-F-Feb2019.mat' # Calibration .mat file
-
-
-# Function to get just the last lines of a file
-
-def tail( f, lines=20 ):
-    total_lines_wanted = lines
-    BLOCK_SIZE = 1024
-    f.seek(0, 2)
-    block_end_byte = f.tell()
-    lines_to_go = total_lines_wanted
-    block_number = -1
-    blocks = [] # blocks of size BLOCK_SIZE, in reverse order starting
-                # from the end of the file
-    while lines_to_go > 0 and block_end_byte > 0:
-        if (block_end_byte - BLOCK_SIZE > 0):
-            # read the last block we haven't yet read
-            f.seek(block_number*BLOCK_SIZE, 2)
-            blocks.append(f.read(BLOCK_SIZE))
-        else:
-            # file too small, start from begining
-            f.seek(0,0)
-            # only read what was not read
-            blocks.append(f.read(block_end_byte))
-        lines_found = blocks[-1].count(b'\n')
-        lines_to_go -= lines_found
-        block_end_byte -= BLOCK_SIZE
-        block_number -= 1
-    all_read_text = b''.join(reversed(blocks))
-    all_read_text = all_read_text.decode("utf-8")
-    return '\n'.join(all_read_text.splitlines()[-total_lines_wanted:])
-
-# Get plot times
-today = dt.datetime.utcnow()
-yesterday = today - dt.timedelta(hours=24)
-
-#today = dt.datetime(2019,7,17,14,0)
-#yesterday = dt.datetime(2019,7,16,14,0)
-
 # Get CPC data
+def get_cpc(d_loc,d1,d2):
+    os.chdir(d_loc+'Data/')                  # Change directory to where the data is
+    #log = open(log_licor,'w')             # Open the log file for writing
+    all_files = glob.glob('*CPC*')
+    file_dates = np.asarray([(dt.datetime.strptime(f[-14:-4], '%Y-%m-%d')).date() for f in all_files]) 
+    idxs = np.where(np.logical_and(file_dates>=d1.date(), file_dates<=d2.date()))[0]
+    dfs = [all_files[i] for i in idxs]
+    cpc = pd.DataFrame()
+    for f in dfs: 
+        # Ignore file if it's empty
+        if os.path.getsize(f)==0:
+            #log.write('Error with: '+f+' this file is empty.\n')
+            continue 
+        cpc = cpc.append(pd.read_csv(f,sep=',',error_bad_lines=False,header=None,parse_dates={'Dates' : [0,1,2,3,4,5]}))  
 
-cpc_yfname = d_loc + 'Data/CPC_Summit_%s.csv'%dt.datetime.strftime(yesterday,'%Y-%m-%d')
-cpc_tfname = d_loc + 'Data/CPC_Summit_%s.csv'%dt.datetime.strftime(today,'%Y-%m-%d')
-
-cpc_data1 = np.genfromtxt(cpc_yfname,delimiter=',', missing_values='', usemask=True)
-cpc_data2 = np.genfromtxt(cpc_tfname,delimiter=',', missing_values='', usemask=True)
-
-# Check incase CPC is not running
-if len(cpc_data1) == 0:
-    if len(cpc_data2)==0:
-        cpc_data = np.zeros([0,7])
-    else:
-        cpc_data = cpc_data2
-elif len(cpc_data2)==0:
-    cpc_data = cpc_data1
-else:
-    cpc_data = np.concatenate([cpc_data1,cpc_data2])
-    
-cpc_count = cpc_data[:,6]
-cpc_dates = []
-for i in range(0,len(cpc_data)):
-    cpc_dates.append(dt.datetime(int(cpc_data[i,0]),int(cpc_data[i,1]),int(cpc_data[i,2]),int(cpc_data[i,3]),int(cpc_data[i,4]),int(cpc_data[i,5])))
-
-
-
+    cpc.Dates = pd.to_datetime(cpc.Dates,format='%Y %m %d %H %M %S')
+    cpc = cpc.sort_values('Dates')
+    cpc = cpc.set_index(cpc['Dates'])
+    cpc.index = pd.DatetimeIndex(cpc.index)
+    del cpc['Dates']
+    cpc_counts =cpc.rename(columns={6:'Concentration (/cm3)'})
+    return cpc_counts
 
 ## Get OPC data
     
@@ -133,28 +75,17 @@ def get_opc(opc_n,d_loc,d1,d2):
     # 1 L/min = 16.66667 cm3/s
     opc.FlowRate = opc.FlowRate/100 * 16.66667
 
-    # Get total counts
-    opc['total_counts']=opc['b0'].astype(float)+ opc['b1'].astype(float)+ opc['b2'].astype(float)+ opc['b3'].astype(float)+ opc['b4'].astype(float)+ opc['b5'].astype(float)+ opc['b6'].astype(float)+ opc['b7'].astype(float)+ opc['b8'].astype(float)+ opc['b9'].astype(float)+ opc['b10'].astype(float)+ opc['b11'].astype(float)+ opc['b12'].astype(float)+ opc['b13'].astype(float)+ opc['b14'].astype(float)+ opc['b15'].astype(float)+ opc['b16'].astype(float)+ opc['b17'].astype(float)+ opc['b18'].astype(float)+ opc['b19'].astype(float)+ opc['b20'].astype(float)+ opc['b21'].astype(float)+ opc['b22'].astype(float)+ opc['b23'].astype(float)
-    #opc['total_counts']=opc['total_counts'].replace({0: np.nan})
-    # Convert total counts/interval to total counts/s
-    opc.period = opc.period/100 # period in s
-    opc.total_counts = opc.total_counts /opc.period
+    opc_counts = opc[opc.columns[0:24]]
+    opc_counts = opc_counts.apply(pd.to_numeric, errors='coerce')
+    opc_params = opc[opc.columns[24:]]
+    
+    # Convert counts/interval to total counts/s
+    opc.period = opc.period/100.0 # period in s
+    opc_counts = opc_counts.divide(opc.period, axis=0)
     # Convert total counts/second to counts/cm3
-    opc['OPC_conc'] = opc.total_counts / opc.FlowRate
+    opc_counts = opc_counts.divide(opc.FlowRate, axis=0)
 
-    return opc
-
-try:
-    TAWO_OPC = get_opc('TAWO',d_loc,yesterday,today)
-except:
-    print('No TAWO OPC data')
-
-try:
-    MSF_OPC = get_opc('MSF',d_loc,yesterday,today)
-except:
-    print('No MSF OPC data')
-
-######################################################################################
+    return opc_counts, opc_params
 
 # Function to read SKYOPC data
 # Get SKYOPC Data
@@ -163,10 +94,8 @@ except:
 # C1 = time + 6 s
 # C2 = time + 12 s
 # ect.
-
 # 32 channels 
 # data output in the unit particle/100ml
-
 # SKYOPC chaneel boundaries:
 #0.25,0.28,0.3,0.35,0.4,0.45,0.5,0.58,0.65,0.7,0.8,1.0,1.3,1.6,2,2.5,3,3.5,4,5,6.5,7.5,8.5,10,12.5,15,17.5,20,25,30,32 
 #channels 16 and 17 are identical (overlapping 
@@ -270,24 +199,13 @@ def get_skyopc(d_loc,d1,d2):
     skyopc = skyopc.sort_values('Date')
     skyopc.index = pd.DatetimeIndex(skyopc.index)
     skyopc = skyopc[~skyopc.index.duplicated()]
-
-    # Units: counts/100ml == 100 counts/cm3
-    # Calculate total counts/cm3 by adding bins
-    skyopc['SKYOPC_conc']=skyopc['ch1']+skyopc['ch2']+skyopc['ch3']+skyopc['ch4']+skyopc['ch5']+skyopc['ch6']+skyopc['ch7']+skyopc['ch8']+skyopc['ch9']+skyopc['ch10']+skyopc['ch11']+skyopc['ch12']+skyopc['ch13']+skyopc['ch14']+skyopc['ch15']+skyopc['ch17']+skyopc['ch18']+skyopc['ch19']+skyopc['ch20']+skyopc['ch21']+skyopc['ch22']+skyopc['ch23']+skyopc['ch24']+skyopc['ch25']+skyopc['ch26']+skyopc['ch27']+skyopc['ch28']+skyopc['ch29']+skyopc['ch30']+skyopc['ch31']+skyopc['ch32']
-    skyopc['SKYOPC_conc']=skyopc['SKYOPC_conc']/100 #counts/cm3
-    skyopc['SKYOPC_conc']=skyopc['SKYOPC_conc'].astype(float)
     
-    return skyopc
-
-try:
-    SKYOPC = get_skyopc(d_loc,yesterday,today)
-except:
-    print('No SKYOPC data')
-
-
-
-
-#######################################################################################
+    skyopc_counts = skyopc[skyopc.columns[0:31]]
+    skyopc_counts = skyopc_counts.apply(pd.to_numeric, errors='coerce') # Counts in counts/ 6 seconds
+    skyopc_counts =skyopc_counts / 100.0 # convert from counts/100ml to counts/cm3    
+    skyopc_params = skyopc[skyopc.columns[31:]]
+    
+    return skyopc_counts, skyopc_params
 
 # Function to read and process CLASP data
 # Inputs
@@ -414,7 +332,7 @@ def get_clasp(d_loc,d1,d2,claspn,channels,calfile,sf):
     param_df = param_df[~param_df.index.duplicated()]
 
     # Arrange Counts into a neat dataframe
-    CLASP_df = pd.DataFrame({'Date':dates, 'Heater flag':heater,
+    CLASP_df = pd.DataFrame({'Date':dates,
                         1:CLASP[:,0],2:CLASP[:,1],
                         3:CLASP[:,2],4:CLASP[:,3], 5:CLASP[:,4],
                         6:CLASP[:,5],7:CLASP[:,6],8:CLASP[:,7],9:CLASP[:,8],
@@ -436,7 +354,7 @@ def get_clasp(d_loc,d1,d2,claspn,channels,calfile,sf):
     # TSI flow is from the TSI flowmeter, realflow is the flow the CLASP records internally
     P = np.polyfit(realflow,TSIflow,2) # These are from the flow calibration - fit a polynomial
     flow = np.polyval(P,CLASP_df['ThisFlow']) # flow in L/min
-    flow_correction = ((flow/60)*1000)/sf # Sample volume in ml/s
+    flow_correction = ((flow/60)*1000)/sf # Sample volume in cm3/s
 
     # Interpolate flow correction onto full timeseries and add to array
     def nan_helper(y):
@@ -444,81 +362,23 @@ def get_clasp(d_loc,d1,d2,claspn,channels,calfile,sf):
     nans, x= nan_helper(flow_correction)
     flow_correction[nans]= np.interp(x(nans), x(~nans), flow_correction[~nans])
     CLASP_df['Sample volume (ml/s)']=flow_correction
+    
 
-    # Now to plot concentrations in counts/ml, just need to divide the counts/s by the sample volume
-    CLASP_df['total_counts']=CLASP_df[1].astype(float)+ CLASP_df[2].astype(float)+CLASP_df[3].astype(float)+CLASP_df[4].astype(float)+CLASP_df[5].astype(float)+CLASP_df[6].astype(float)+CLASP_df[7].astype(float)+CLASP_df[8].astype(float)+CLASP_df[9].astype(float)+CLASP_df[10].astype(float)+CLASP_df[11].astype(float)+CLASP_df[12].astype(float)+CLASP_df[13].astype(float)+CLASP_df[14].astype(float)+CLASP_df[15].astype(float)+CLASP_df[16].astype(float)
+    # Now to plot concentrations in counts/cm3, just need to divide the counts/s by the sample volume
+    clasp_counts = CLASP_df[CLASP_df.columns[0:16]]
+    clasp_params = CLASP_df[CLASP_df.columns[16:]]
+    clasp_counts = clasp_counts.apply(pd.to_numeric, errors='coerce')
+    clasp_counts = clasp_counts.divide(flow_correction, axis=0)
+    
     # CLASP-G flowrate = 3L/minute = 50 cm3/second
     # Units: particle counts/ sample interval
     # Sample interval: 1s
     # Calculate total counts
     # Calculate concentation
     
-    CLASP_df['CLASP_conc'] = CLASP_df['total_counts'] / 50 #counts/cm3
+    #CLASP_df['Concentration (/cm3)'] = CLASP_df['total_counts'] / 50 #counts/cm3
     
-    return CLASP_df
-
-
-channels = 16 # Number of aerosol concentration channels (usually 16)
-CLASP = get_clasp(d_loc,yesterday,today,'CLASP_F',16,calfile,1)
-
-###############################################################################
-
-# Set up y lim
-max_counts = max(cpc_count)
-if max_counts<100:
-    yulim = 100
-else:
-    yulim = max_counts+10
-
-# Plot & save
-
-
-fig = plt.figure(figsize=(17,4))
-ax = fig.add_subplot(111)
-ax.grid(True)
-try:
-    ax.semilogy(cpc_dates,cpc_count, label='CPC (>5nm)',zorder=3,alpha=0.5)
-except:
-    pass
-
-try:
-    ax.semilogy(MSF_OPC.index,MSF_OPC.total_counts,label = 'MSF OPC (0.38-17$\mu$m)',zorder=4,alpha=0.8)  
-except:
-    pass
-
-try:
-    ax.semilogy(TAWO_OPC.index,TAWO_OPC.total_counts,label = 'TAWO OPC (0.38-17$\mu$m)',zorder=2,alpha=0.8)
-except:
-    pass
-
-try:
-    ax.semilogy(SKYOPC.index,SKYOPC.SKYOPC_conc,label = 'Sky OPC (0.25-32$\mu$m)',zorder=3,alpha=0.8)
-except:
-    pass
-
-try:
-    ax.semilogy(CLASP.index,CLASP.total_counts,label = 'CLASP',zorder=1,alpha=0.8)
-except:
-    print('failed at semilogy CLASP')
-    pass
-    
-ax.set_ylim(0,10000)
-ax.set_ylabel('Total Particle Counts / cm$^3$')
-ax.set_title('Total Particle Counts: %s'%((dt.datetime.strftime(yesterday,'%Y-%m-%d')+' to '+dt.datetime.strftime(today,'%Y-%m-%d'))))
-ax.set_xlabel('Hours (UTC)')
-ax.xaxis.set_major_formatter(myFmt)
-ax.xaxis.set_major_locator(rule)
-ax.set_xlim(yesterday,today)
-ax.legend(loc='best',fontsize=10)
-fig.tight_layout()
-fig.savefig(d_loc + 'Ncounts_current.png')
-
-fig.clf()
-
-
-###############################################################################
-# Plot spectra
-###############################################################################
+    return clasp_counts,clasp_params
 
 # Plot aerosol size distribution spectra
 def get_dist(df,nbins,bounds):
@@ -533,141 +393,4 @@ def get_dist(df,nbins,bounds):
     hist = df.sum(axis=0)
     dNdlogd = hist/dlogd
     return mid_points,dNdlogd
-
-def plot_dist(dists,labels,xlims):
-    fig = plt.figure(figsize=(12,8))
-    ax = fig.add_subplot(111)
-    ax.grid(True)
-    for i in range(0,len(dists)):
-        if not dists[i]:
-            continue
-        else:
-            ax.loglog(dists[i][0],dists[i][1],label=labels[i])
-
-    ax.set_xlim(xlims[0],xlims[1])
-    ax.set_xticks([0.35, 0.46, 0.66, 1, 1.7, 3,6.5,10, 16, 25, 40])
-    ax.get_xaxis().set_major_formatter(matplotlib.ticker.ScalarFormatter())
-    ax.set_xlabel('Diameter (d) / $\mu$m')
-    ax.set_ylabel('dN/dlogd (cc$^{-3}$)')
-    ax.legend(loc='best',fontsize=10)
-    ax.set_title('Aerosol size distribution: %s'%((dt.datetime.strftime(yesterday,'%Y-%m-%d')+' to '+dt.datetime.strftime(today,'%Y-%m-%d'))))
-    fig.tight_layout()
-    fig.savefig(d_loc + 'Spectra_current.png')
-    fig.clf()
-    # return fig or save fig.
-    
-def plot_dist_time(d1,d2,dates,counts,bins,name,vmax,cbar=True):
-    if cbar:
-        fig = plt.figure(figsize=(17,5))
-    else:
-        fig = plt.figure(figsize=(17,4))
-    ax = fig.add_subplot(111)
-    cs = plt.pcolormesh(dates,np.arange(0,len(bins)-1,1),np.transpose(counts),norm=colors.LogNorm(vmin=1, vmax=vmax),cmap='viridis')
-    
-    if cbar:
-        cb = plt.colorbar(cs,extend='max',label='Counts',orientation='horizontal',pad=0.18,aspect=50,shrink=0.7)
-    else:
-        cb = plt.colorbar(cs,extend='max',label='Counts')
-        cb.remove()
-    
-    ax.xaxis_date()
-    ax.set_title('%s: %s'%(name,(dt.datetime.strftime(d1,'%Y-%m-%d')+' to '+dt.datetime.strftime(d2,'%Y-%m-%d'))))
-    ax.set_yticks(np.arange(0,len(bins)-1,1))
-    ax.tick_params(axis='y', which='major', labelsize=10) 
-    for label in ax.yaxis.get_ticklabels()[::2]:
-        label.set_visible(False)
-    ax.set_yticklabels(bins)
-    ax.set_ylabel('Particle Diameter ($\mu$m)')
-    ax.set_xlabel('Hours UTC')
-    ax.set_xlim(d1,d2)
-    ax.xaxis.set_major_formatter(myFmt)
-    ax.xaxis.set_major_locator(rule)   
-    fig.tight_layout()
-    fig.savefig(d_loc + '%s_timeseries_current.png'%name)
-    fig.clf()
-    
-# Subset counts.
-try:
-    MSF_counts = MSF_OPC[MSF_OPC.columns[0:24]]
-    MSF_counts = MSF_counts.apply(pd.to_numeric, errors='coerce')
-except:
-    pass
-
-try:
-    TAWO_counts = TAWO_OPC[TAWO_OPC.columns[0:24]]
-    TAWO_counts = TAWO_counts.apply(pd.to_numeric, errors='coerce')
-except:
-    pass
-try:
-    SKYOPC_counts = SKYOPC[SKYOPC.columns[0:31]]
-    SKYOPC_counts = SKYOPC_counts.apply(pd.to_numeric, errors='coerce')
-except:
-    pass
-try:
-    CLASP_counts = CLASP[CLASP.columns[1:17]]
-    CLASP_counts = CLASP_counts.apply(pd.to_numeric, errors='coerce')
-except:
-    print('failed at clasp counts conversion')
-    pass
-
-OPC_bins = 24
-OPC_bounds = [0.35, 0.46, 0.66, 1, 1.3, 1.7, 2.3, 3, 4, 5.2, 6.5, 8, 10, 12, 14, 16, 18, 20, 22, 25, 28, 31, 34, 37, 40]
-SKYOPC_bins = 31
-SKYOPC_bounds = [0.25,0.28,0.3,0.35,0.4,0.45,0.5,0.58,0.65,0.7,0.8,1.0,1.3,1.6,2,2.5,3,3.5,4,5,6.5,7.5,8.5,10,12.5,15,17.5,20,25,30,32,40]
-CLASP_bins=16
-#CLASP_bounds=[0.3,0.4,0.5,0.6,0.7,1,2,3,4,5,6,7,8,9,10,12,14.3] # Note clasp bounds are radii
-CLASP_bounds=[0.6,0.8,1,1.2,1.4,2,4,6,8,10,12,14,16,18,20,24,28]
-#CLASP_bounds=list(np.asarray(CLASP_bounds)/2)
-
-
-try:
-    MSF_dist = get_dist(MSF_counts,OPC_bins,OPC_bounds)
-except:
-    MSF_dist=[]
-try:
-    TAWO_dist = get_dist(TAWO_counts,OPC_bins,OPC_bounds)
-except:
-    TAWO_dist=[]
-try:    
-    SKYOPC_dist= get_dist(SKYOPC_counts,SKYOPC_bins,SKYOPC_bounds)
-except:
-    SKYOPC_dist=[]
-try:    
-    CLASP_dist= get_dist(CLASP_counts,CLASP_bins,CLASP_bounds)
-except:
-    CLASP_dist=[]
-
-plot_dist([MSF_dist,TAWO_dist,SKYOPC_dist,CLASP_dist],['MSF_OPC','TAWO_OPC','SKYOPC','CLASP'],[SKYOPC_bounds[0],SKYOPC_bounds[-1]])
-
-
-
-
-
-
-# Plot time series distributions: 
-
-sky_counts = SKYOPC_counts.to_numpy()
-sky_dates = np.array(SKYOPC_counts.index.to_pydatetime())
-plot_dist_time(yesterday,today,sky_dates,sky_counts,SKYOPC_bounds,'SKYOPC',1000,cbar=False)
-
-try:
-    opc_counts = MSF_counts.to_numpy()
-    opc_dates = np.array(MSF_counts.index.to_pydatetime())
-    plot_dist_time(yesterday,today,opc_dates,opc_counts,OPC_bounds,'MSF_OPC',1000,cbar=False)
-except:
-    pass
-
-try:
-    opct_counts = TAWO_counts.to_numpy()
-    opct_dates = np.array(TAWO_counts.index.to_pydatetime())
-    plot_dist_time(yesterday,today,opct_dates,opct_counts,OPC_bounds,'TAWO_OPC',1000)
-except:
-    pass
-
-try:
-    clasp_counts = CLASP_counts.to_numpy()
-    clasp_dates = np.array(CLASP_counts.index.to_pydatetime())
-    plot_dist_time(yesterday,today,clasp_dates,clasp_counts,CLASP_bounds,'CLASP_F',1000,cbar=False)
-except:
-    pass
 
