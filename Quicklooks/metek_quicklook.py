@@ -32,20 +32,26 @@ import pandas as pd
 def metek_pdf_sort(df,start,stop):
     # Sort out the date referencing and columns
     if df.empty==False:
-        df['ms']= df[5]*1000000
+        df['ms']= (df[5] - np.floor(df[5]))*1000000
         df['ms']= df['ms'].astype(int)
         df[0] = df[0].astype(str)
         df[1] = df[1].astype(str).apply(lambda x: x.zfill(2))
         df[2] = df[2].astype(str).apply(lambda x: x.zfill(2))
         df[3] = df[3].astype(str).apply(lambda x: x.zfill(2))
         df[4] = df[4].astype(str).apply(lambda x: x.zfill(2))
-        df['ms'] = df['ms'].astype(str)        
-        df['Date'] = pd.to_datetime(df[0]+df[1]+df[2]+df[3]+df[4]+df['ms'],format='%Y%m%d%H%M%f')
+        df[5] = np.floor(df[5]).astype(int)
+        df[5] = df[5].astype(str).apply(lambda x: x.zfill(2))
+        df['ms'] = df['ms'].astype(str).apply(lambda x: x.zfill(6))   
+        
+        df['Date'] = pd.to_datetime(df[0]+df[1]+df[2]+df[3]+df[4]+df[5]+df['ms'],format='%Y%m%d%H%M%S%f')        
         df = df.set_index('Date')
         del df[0],df[1],df[2],df[3],df[4],df[5],df['ms'],df[7],df[9],df[10],df[12],df[13],df[15],df[16]
         df.columns = ['Status','x','y','z','T']
         df = df[pd.to_numeric(df['T'], errors='coerce').notnull()]        
         df['T']=df['T'].astype(float)
+        df['x']=df['x'].astype(float)
+        df['y']=df['y'].astype(float)
+        df['z']=df['z'].astype(float)
         df['T']=df['T']/100
         df = df.sort_values('Date')
         #new_idx = pd.date_range(pd.to_datetime(str(start),format='%y%m%d'),pd.to_datetime(str(stop),format='%y%m%d'),freq='1s' )

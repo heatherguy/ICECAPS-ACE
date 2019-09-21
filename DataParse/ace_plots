@@ -15,9 +15,6 @@ import matplotlib.dates as md
 import pandas as pd
 from matplotlib import rcParams
 import matplotlib.colors as colors
-import os
-import glob
-from scipy import io
 from ace_parse import *
 
 # Plotting preferences
@@ -40,21 +37,23 @@ calfile = '/Users/heather/Desktop/Summit_May_2019/Instruments/CLASP/CLASP-cal-Fe
 
 # Plot times
 
-d1=dt.datetime(2019,9,11,0,0)
-d2=dt.datetime(2019,9,12,0,0)
-#d1 = dt.datetime.utcnow()
-#d2 = today - dt.timedelta(hours=24)
+#d1=dt.datetime(2019,9,11,0,0)
+#d2=dt.datetime(2019,9,12,0,0)
+d2 = dt.datetime.utcnow()
+d1 = d2 - dt.timedelta(hours=24)
 
 # For each dataset, get array of counts/cm3. And a seperate array of params.
 
 cpc_counts = get_cpc(d_loc,d1,d2)
 skyopc_counts,skyopc_params = get_skyopc(d_loc,d1,d2)
 MSF_counts,MSF_params = get_opc('MSF',d_loc,d1,d2)
+TAWO_counts,TAWO_params = get_opc('TAWO',d_loc,d1,d2)
 clasp_counts,clasp_params = get_clasp(d_loc,d1,d2,'CLASP_F',16,calfile,1)
 
 # Calculate total c/cm3 for each dataset - just the sum of c/cm3 in individual bins
 
 MSF_total = MSF_counts.sum(axis=1)
+TAWO_total = TAWO_counts.sum(axis=1)
 clasp_total = clasp_counts.sum(axis=1)
 skyopc_total = skyopc_counts.sum(axis=1)
 
@@ -62,6 +61,8 @@ skyopc_total = skyopc_counts.sum(axis=1)
 
 MSF_total_10 = MSF_total.resample('10s').median()
 MSF_counts_10 = MSF_counts.resample('10s').median()
+TAWO_total_10 = TAWO_total.resample('10s').median()
+TAWO_counts_10 = TAWO_counts.resample('10s').median()
 clasp_total_10 = clasp_total.resample('10s').median()
 clasp_counts_10 = clasp_counts.resample('10s').median()
 skyopc_total_10 = skyopc_total.resample('10s').median()
@@ -76,7 +77,7 @@ ax.grid(True)
 
 ax.semilogy(cpc_total_10.index,cpc_total_10, label='CPC (>5nm)',zorder=3,alpha=0.5)
 ax.semilogy(MSF_total_10.index,MSF_total_10,label = 'MSF OPC (0.38-17$\mu$m)',zorder=4,alpha=0.8)  
-#ax.semilogy(TAWO_OPC_1min.index,TAWO_OPC_1min,label = 'TAWO OPC (0.38-17$\mu$m)',zorder=2,alpha=0.8)
+ax.semilogy(TAWO_total_10.index,TAWO_total_10,label = 'TAWO OPC (0.38-17$\mu$m)',zorder=2,alpha=0.8)
 ax.semilogy(skyopc_total_10.index,skyopc_total_10,label = 'Sky OPC (0.25-32$\mu$m)',zorder=3,alpha=0.8)
 ax.semilogy(clasp_total_10.index,clasp_total_10,label = 'CLASP',zorder=1,alpha=0.8)
     
@@ -123,10 +124,11 @@ CLASP_bins=16
 CLASP_bounds=[0.6,0.8,1,1.2,1.4,2,4,6,8,10,12,14,16,18,20,24,28]
 
 MSF_dist = get_dist(MSF_counts_10,OPC_bins,OPC_bounds)
+TAWO_dist = get_dist(TAWO_counts_10,OPC_bins,OPC_bounds)
 SKYOPC_dist= get_dist(skyopc_counts_10,SKYOPC_bins,SKYOPC_bounds)
 CLASP_dist= get_dist(clasp_counts_10,CLASP_bins,CLASP_bounds)
 
-plot_dist([MSF_dist,SKYOPC_dist,CLASP_dist],['MSF_OPC','SKYOPC','CLASP'],[SKYOPC_bounds[0],SKYOPC_bounds[-1]])
+plot_dist([MSF_dist,TAWO_dist,SKYOPC_dist,CLASP_dist],['MSF_OPC','TAWO_OPC','SKYOPC','CLASP'],[SKYOPC_bounds[0],SKYOPC_bounds[-1]])
 
 # Plot time series distribution
 
@@ -136,13 +138,16 @@ skyopc_dates = np.array(skyopc_counts_10.index.to_pydatetime())
 msf_counts_np = MSF_counts_10.to_numpy()
 msf_dates = np.array(MSF_counts_10.index.to_pydatetime())
 
+tawo_counts_np = TAWO_counts_10.to_numpy()
+tawo_dates = np.array(TAWO_counts_10.index.to_pydatetime())
+
 clasp_counts_np = clasp_counts_10.to_numpy()
 clasp_dates = np.array(clasp_counts_10.index.to_pydatetime())
  
-in_x = [skyopc_dates,msf_dates,clasp_dates]
-in_y = [skyopc_counts_np,msf_counts_np,clasp_counts_np]
-in_bounds = [SKYOPC_bounds,OPC_bounds,CLASP_bounds]
-in_names = ['SKYOPC','MSF OPC','CLASP']
+in_x = [skyopc_dates,msf_dates,tawo_dates,clasp_dates]
+in_y = [skyopc_counts_np,msf_counts_np,tawo_counts_np,clasp_counts_np]
+in_bounds = [SKYOPC_bounds,OPC_bounds,OPC_bounds,CLASP_bounds]
+in_names = ['SKYOPC','MSF OPC','TAWO OPC','CLASP']
 
 nrow = len(in_x)
 fig, axs = plt.subplots(nrows=nrow, ncols=1,squeeze=0,sharex=True,figsize=(17,3*nrow))

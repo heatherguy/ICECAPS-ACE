@@ -31,35 +31,29 @@ import pandas as pd
 def HMP_pdf_sort(df,start,stop):
     # Sort out the date referencing and columns
     if df.empty==False:
-        df.dropna(inplace=True)
-        df[0] = df[0].astype(int)
-        df[1] = df[1].astype(int)
-        df[2] = df[2].astype(int)
-        df[3] = df[3].astype(int)
-        df[4] = df[4].astype(int)  
+        df = df.dropna()
         df[5] = df[5].astype(int)
         df['Date'] = pd.to_datetime(df[0]*10000000000+df[1]*100000000+df[2]*1000000+df[3]*10000+df[4]*100+df[5],format='%Y%m%d%H%M%S')
         df = df.set_index('Date')
         del df[0],df[1],df[2],df[3],df[4],df[5],df[6]
         df.columns = ['RH', 'Ta', 'Tw', 'Err', 'h']
         df = df.sort_values('Date')
-        new_idx = pd.date_range(pd.to_datetime(str(start),format='%y%m%d'),pd.to_datetime(str(stop),format='%y%m%d')+dt.timedelta(days=1),freq='1s' )
+        new_idx = pd.date_range(pd.to_datetime(str(start),format='%y%m%d'),pd.to_datetime(str(stop),format='%y%m%d'),freq='1s' )
         df.index = pd.DatetimeIndex(df.index)
         df = df[~df.index.duplicated()]
         df= df.reindex(new_idx, fill_value=np.NaN)
-
     else:
-        df= pd.DataFrame(columns=['RH', 'Ta', 'Tw', 'Err', 'h'])
+        df = pd.DataFrame(columns=['RH', 'Ta', 'Tw', 'Err', 'h'])
     return df
 
-def extract_HMP_data(start,stop,dpath,logf):
+def extract_HMP_data(name, start,stop,dpath,logf):
     # Extract HMP155 data into a pandas array
     # Data format: YYYY MM DD HH MM.mmm TT:TT:TT RH Ta Tw Err hs
     # Ta = seperate probe T, Tw = wetbulb t, hs = heating status
 
     os.chdir(dpath)                  # Change directory to where the data is
     log = open(logf,'w')             # Open the log file for writing
-    all_files = glob.glob('*.HMP*')  # List all data files
+    all_files = glob.glob('*.%s*'%name)  # List all data files
     
     # Get start and stop filenames
     start_f = int(start.strftime("%y%m%d"))
@@ -71,62 +65,31 @@ def extract_HMP_data(start,stop,dpath,logf):
     dfs = [all_files[i] for i in idxs]
 
     # Initialise empty data frames
-    HMP1 = pd.DataFrame()
-    HMP2 = pd.DataFrame()
-    HMP3 = pd.DataFrame()
-    HMP4 = pd.DataFrame()
-    HMP5 = pd.DataFrame()
+    HMP = pd.DataFrame()
 
     # Extract the data
-    for f in dfs: 
-        # Ignore file if it's empty or contains non-ascii characters
+    for f in dfs:
+        with open(f,"r+") as fd:
+            new_f = fd.readlines()
+            fd.seek(0)
+            for line in new_f:
+                if len(line)==63:
+                    fd.write(line)
+                fd.truncate()
+        # Ignore file if it's empty 
         if os.path.getsize(f)==0:
             log.write('Error with: '+f+' this file is empty.\n')
             continue
 
-        # Store good data for HMP1-5      
-        if f[-1]=='1':
-            try:
-                HMP1 = HMP1.append(pd.read_csv(f, header=None, encoding='utf-8', delim_whitespace=True, error_bad_lines=False))
-            except:
-                continue
-        elif f[-1]=='2':
-            try: 
-                HMP2 = HMP2.append(pd.read_csv(f, header=None, encoding='utf-8', delim_whitespace=True, error_bad_lines=False))
-            except:
-                continue
-        elif f[-1]=='3':
-            try:
-                HMP3 = HMP3.append(pd.read_csv(f, header=None, encoding='utf-8', delim_whitespace=True, error_bad_lines=False))
-            except:
-                continue
-        elif f[-1]=='4':
-            try:
-                HMP4 = HMP4.append(pd.read_csv(f, header=None, encoding='utf-8', delim_whitespace=True, error_bad_lines=False))
-            except:
-                continue
-        elif f[-1]=='5':
-            try:
-                HMP4 = HMP5.append(pd.read_csv(f, header=None, encoding='utf-8', delim_whitespace=True, error_bad_lines=False))
-            except:
-                continue
-        else:
-            log.write('Error with %s, file name error.\n'%f)
-
+        # Store good data 
+        HMP = HMP.append(pd.read_csv(f, header=None, delim_whitespace=True, error_bad_lines=False))
         
     # Sort out the date referencing and columns
-
-    HMP1 = HMP_pdf_sort(HMP1,start_f,stop_f)
-    HMP2 = HMP_pdf_sort(HMP2,start_f,stop_f)
-    HMP3 = HMP_pdf_sort(HMP3,start_f,stop_f)
-    HMP4 = HMP_pdf_sort(HMP4,start_f,stop_f)
-    HMP5 = HMP_pdf_sort(HMP5,start_f,stop_f)
+    HMP = HMP_pdf_sort(HMP,start_f,stop_f)
 
     log.write('Data parse finished\n')
     log.close()
-    return HMP1,HMP2,HMP3,HMP4,HMP5
-
-
+    return HMP
 
 
 # Set up plots
@@ -152,7 +115,15 @@ fig_size = (6,4)
 
 # HMP data
 print('Extracting HMP data')
-HMP1,HMP2,HMP3,HMP4,HMP5 = extract_HMP_data(week_start,week_stop,dpath,log_hmp)
+HMP1 = extract_HMP_data('HMP1',week_start,week_stop,dpath,log_hmp)
+print('Got HMP1')
+HMP2 = extract_HMP_data('HMP2',week_start,week_stop,dpath,log_hmp)
+print('Got HMP2')
+HMP3 = extract_HMP_data('HMP3',week_start,week_stop,dpath,log_hmp)
+print('Got HMP3')
+HMP4 = extract_HMP_data('HMP4',week_start,week_stop,dpath,log_hmp)
+print('Got HMP4')
+print('Building plot')
 
 # Temperature/ humidity plot
 fig = plt.figure(figsize=fig_size)
@@ -161,10 +132,6 @@ ax1.plot(HMP1.index,HMP1.Ta,c='b',label='HMP1',alpha=0.8)
 ax1.plot(HMP2.index,HMP2.Ta,c='r',label='HMP2',alpha=0.8)
 ax1.plot(HMP3.index,HMP3.Ta,c='g',label='HMP3',alpha=0.8)
 ax1.plot(HMP4.index,HMP4.Ta,c='m',label='HMP4',alpha=0.8)
-#ax1.plot(m1.index,m1['T'],c='c',label='m1')
-#ax1.plot(m2.index,m2['T'],c='k',label='m2')
-#ax1.plot(v1.index,v1['T'],c='orange',label='v1')
-#ax1.plot(v2.index,v2['T'],c='grey',label='v2')
 ax1.grid('on')
 ax1.set_ylabel(u'T \N{DEGREE SIGN}C')
 ax1.legend(fontsize='xx-small')
