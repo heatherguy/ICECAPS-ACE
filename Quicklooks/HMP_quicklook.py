@@ -38,7 +38,7 @@ def HMP_pdf_sort(df,start,stop):
         del df[0],df[1],df[2],df[3],df[4],df[5],df[6]
         df.columns = ['RH', 'Ta', 'Tw', 'Err', 'h']
         df = df.sort_values('Date')
-        new_idx = pd.date_range(pd.to_datetime(str(start),format='%y%m%d'),pd.to_datetime(str(stop),format='%y%m%d'),freq='1s' )
+        new_idx = pd.date_range(pd.to_datetime(start).round('1s'),pd.to_datetime(stop).round('1s'),freq='1s' )
         df.index = pd.DatetimeIndex(df.index)
         df = df[~df.index.duplicated()]
         df= df.reindex(new_idx, fill_value=np.NaN)
@@ -53,7 +53,7 @@ def extract_HMP_data(name, start,stop,dpath,logf):
 
     os.chdir(dpath)                  # Change directory to where the data is
     log = open(logf,'w')             # Open the log file for writing
-    all_files = glob.glob('*.%s*'%name)  # List all data files
+    all_files = glob.glob('*.%s'%name)  # List all data files
     
     # Get start and stop filenames
     start_f = int(start.strftime("%y%m%d"))
@@ -69,23 +69,25 @@ def extract_HMP_data(name, start,stop,dpath,logf):
 
     # Extract the data
     for f in dfs:
-        with open(f,"r+") as fd:
-            new_f = fd.readlines()
-            fd.seek(0)
-            for line in new_f:
-                if len(line)==63:
-                    fd.write(line)
-                fd.truncate()
+        new_f = '%s_parsed'%f
+        if not os.path.isfile(new_f):
+            new_file = open(new_f,'a')
+            with open(f,"r",errors='replace') as fd:
+                f_dat = fd.readlines()
+                for line in f_dat:
+                    if len(line)==62:
+                        new_file.write(line)
+
         # Ignore file if it's empty 
-        if os.path.getsize(f)==0:
+        if os.path.getsize(new_f)==0:
             log.write('Error with: '+f+' this file is empty.\n')
             continue
 
         # Store good data 
-        HMP = HMP.append(pd.read_csv(f, header=None, delim_whitespace=True, error_bad_lines=False))
+        HMP = HMP.append(pd.read_csv(new_f, header=None, delim_whitespace=True, error_bad_lines=False))
         
     # Sort out the date referencing and columns
-    HMP = HMP_pdf_sort(HMP,start_f,stop_f)
+    HMP = HMP_pdf_sort(HMP,start,stop)
 
     log.write('Data parse finished\n')
     log.close()
