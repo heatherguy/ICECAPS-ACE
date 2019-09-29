@@ -24,6 +24,7 @@ import glob
 import os
 import itertools
 import datetime
+import io
 import pandas as pd
 
 # HMP155 parsing
@@ -32,16 +33,26 @@ def HMP_pdf_sort(df,start,stop):
     # Sort out the date referencing and columns
     if df.empty==False:
         df = df.dropna()
-        df[5] = df[5].astype(int)
-        df['Date'] = pd.to_datetime(df[0]*10000000000+df[1]*100000000+df[2]*1000000+df[3]*10000+df[4]*100+df[5],format='%Y%m%d%H%M%S')
+        df['Second'] = df['Second'].astype(float)
+        df['Second'] = df['Second'].astype(int)
+        df['Minute'] = df['Minute'].astype(int)
+        df['Hour'] = df['Hour'].astype(int)
+        df['Day'] = df['Day'].astype(int)
+        df['Month'] = df['Month'].astype(int)
+        df['Year'] = df['Year'].astype(int)
+        df['Date'] = pd.to_datetime(df['Year']*10000000000+df['Month']*100000000+df['Day']*1000000+df['Hour']*10000+df['Minute']*100+df['Second'],format='%Y%m%d%H%M%S')
         df = df.set_index('Date')
-        del df[0],df[1],df[2],df[3],df[4],df[5],df[6]
+        del df['Year'],df['Month'],df['Day'],df['Hour'],df['Minute'],df['Second'],df['junk']
         df.columns = ['RH', 'Ta', 'Tw', 'Err', 'h']
+        df['RH']=df['RH'].astype(float)
+        df['Tw']=df['Tw'].astype(float)
+        df['Ta']=df['Ta'].astype(float)
+        #df['h']=df['h'].astype(int)       
         df = df.sort_values('Date')
         new_idx = pd.date_range(pd.to_datetime(start).round('1s'),pd.to_datetime(stop).round('1s'),freq='1s' )
         df.index = pd.DatetimeIndex(df.index)
         df = df[~df.index.duplicated()]
-        df= df.reindex(new_idx, fill_value=np.NaN)
+        #df= df.reindex(new_idx, fill_value=np.NaN)
     else:
         df = pd.DataFrame(columns=['RH', 'Ta', 'Tw', 'Err', 'h'])
     return df
@@ -69,23 +80,21 @@ def extract_HMP_data(name, start,stop,dpath,logf):
 
     # Extract the data
     for f in dfs:
-        new_f = '%s_parsed'%f
-        if not os.path.isfile(new_f):
-            new_file = open(new_f,'a')
-            with open(f,"r",errors='replace') as fd:
-                f_dat = fd.readlines()
-                for line in f_dat:
-                    if len(line)==62:
-                        new_file.write(line)
-
         # Ignore file if it's empty 
-        if os.path.getsize(new_f)==0:
+        if os.path.getsize(f)==0:
             log.write('Error with: '+f+' this file is empty.\n')
             continue
-
-        # Store good data 
-        HMP = HMP.append(pd.read_csv(new_f, header=None, delim_whitespace=True, error_bad_lines=False))
         
+        fd = io.open(f,"r",errors='replace')
+        f_dat = fd.readlines()
+        clean_dat = [i for i in f_dat if len(i)>=60 and len(i)<=63]
+        pdf = pd.DataFrame(clean_dat)
+        pdf[1] = pdf[0].str.split()
+        final_df = pd.DataFrame(pdf[1].values.tolist(), columns=['Year','Month','Day','Hour','Minute','Second','junk','RH','Ta', 'Tw', 'Err', 'h'])
+        # Store good data
+        HMP = HMP.append(final_df)
+        
+ 
     # Sort out the date referencing and columns
     HMP = HMP_pdf_sort(HMP,start,stop)
 
@@ -157,4 +166,6 @@ ax1.xaxis.set_major_formatter(myFmt)
 fig.tight_layout()
 print('Saving HMP plot')
 fig.savefig('/home/fluxtower/Quicklooks/T_RH_current.png')
+#fig.savefig('/Users/heather/ICECAPS-ACE/Quicklooks/T_RH_current.png')
+
 fig.clf()
