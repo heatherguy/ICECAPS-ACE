@@ -330,7 +330,7 @@ def metek_pdf_sort(df,start,stop):
         df['T']= df['T']+ 273.15
     return df
 
-def extract_metek_data(start,stop,dpath,log_metek):
+def extract_metek_data(start,stop,dpath,log_metek,save=False):
     # Extract metek data into a pandas array
     # Data format:
     #2019 04 02 16 23 41.734 M:x =    14 y =    -1 z =    12 t =  2357
@@ -382,11 +382,16 @@ def extract_metek_data(start,stop,dpath,log_metek):
     m1 = metek_pdf_sort(m1,start_f,stop_f)
     m2 = metek_pdf_sort(m2,start_f,stop_f)
     log.write('Data parse finished\n')
-    log.close()
     
     # crop data for date/time
     m1=m1[start:stop]
     m2=m2[start:stop]
+    
+    if save: 
+        m1.to_csv(save+'metek1_%s'%str(start.date()))
+        m2.to_csv(save+'metek2_%s'%str(start.date()))
+        log.write('Saved csv')
+    log.close()
     
     return m1,m2     
 
@@ -396,7 +401,7 @@ def extract_metek_data(start,stop,dpath,log_metek):
 
 # Licor parsing
 
-def extract_licor_data(start,stop,dpath,log_licor):
+def extract_licor_data(start,stop,dpath,log_licor,save=False):
 
 #2019 04 03 11 11 56.453 89	189	0.16469	35.4518	0.04404	297.105	20.74	99.0	1.5224
 # Date, Ndx, DiagVal, CO2R, CO2D, H2OR, H2OD, T, P, cooler
@@ -457,13 +462,12 @@ def extract_licor_data(start,stop,dpath,log_licor):
         log.write('No data from licor\n')
         
         # crop data for date/time
-    licor=licor[start:stop]    
-    
-    T = licor['T']+273.15      # K
-    P = licor['P']*1000        # Pa
-    Nconc_h2o = licor['H2OD']/1000 # mol/m3
-    
+    licor=licor[start:stop]        
     log.write('Data parse finished\n')
+    if save: 
+        licor.to_csv(save+'licor_%s'%str(start.date()))
+        log.write('Saved csv')
+        
     log.close()
 
     return licor    
