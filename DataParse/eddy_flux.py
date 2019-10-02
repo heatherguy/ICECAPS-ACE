@@ -244,9 +244,14 @@ def shf(w,t,avp):
     for i in range(0,len(keys)):
         w1 =w_g.get_group(keys[i])
         t1 =t_g.get_group(keys[i])
-        flux,std = eddyflux(w1,t1) # Flux units = Km/s
-        SHF.append(rho * cp * flux) # W/m2
-        stds.append(std)
+        # Check there's at least 60% of averaging period data
+        if len(t1) >= 0.6 * (15*60) * 10:
+            flux,std = eddyflux(w1,t1) # Flux units = Km/s
+            SHF.append(rho * cp * flux) # W/m2
+            stds.append(std)
+        else:
+            SHF.append(np.nan)
+            stds.append(np.nan)
     
     return SHF,std
 
@@ -273,13 +278,17 @@ def lhf(w,T,P,Nconc,avp):
         # Join data frames so they're the same length, remove nans
         join = pd.concat([q, w1], axis=1, sort=False)
         join = join.dropna()
-
-        # Calculate latent heat flux.
-        #It represents a loss of energy from the
-        #surface due to evaporation. 
-        # LH = L * rho * mean(w'*q')
-        # q = H2O mixing ratio
-        flux,std = eddyflux(join['w'],join[0])
-        LHF.append(L * rho * flux)
+        
+        # Check there's at least 60% of averaging period data
+        if len(join) >= 0.6 * (15*60) * 10:
+            # Calculate latent heat flux.
+            #It represents a loss of energy from the
+            #surface due to evaporation. 
+            # LH = L * rho * mean(w'*q')
+            # q = H2O mixing ratio
+            flux,std = eddyflux(join['w'],join[0])
+            LHF.append(L * rho * flux)
+        else:
+            LHF.append(np.nan)
         
     return LHF

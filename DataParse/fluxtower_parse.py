@@ -99,7 +99,7 @@ def extract_snd_data(start,stop,dpath,log_snd):
 
     # Extract daterange
     file_dates = np.asarray([int(f[0:6]) for f in all_files])
-    idxs = np.where(np.logical_and(file_dates>=start_f, file_dates<=stop_f))[0]
+    idxs = np.where(np.logical_and(file_dates>=start_f, file_dates<stop_f))[0]
     dfs = [all_files[i] for i in idxs]
 
     # Initialise empty data frames
@@ -134,10 +134,22 @@ def extract_snd_data(start,stop,dpath,log_snd):
     if snd.empty==False:
         snd = snd.set_index('Date')
         snd = snd.sort_values('Date')
-        new_idx = pd.date_range(pd.to_datetime(str(start_f),format='%y%m%d'),pd.to_datetime(str(stop_f),format='%y%m%d'),freq='min' )
+    #    new_idx = pd.date_range(pd.to_datetime(str(start_f),format='%y%m%d'),pd.to_datetime(str(stop_f),format='%y%m%d'),freq='min' )
         snd.index = pd.DatetimeIndex(snd.index)
         snd = snd[~snd.index.duplicated()]
-        snd= snd.reindex(new_idx, fill_value=np.NaN)    
+    #   snd= snd.reindex(new_idx, fill_value=np.NaN)
+        
+        # Check diagnostic tests pass.
+        snd = snd[snd['V'].astype(int)==11]
+
+        # Check data quality
+        snd['Q'] = snd['Q'].astype(int)
+        snd = snd[snd['Q']>151]
+
+        # Check for crazy values
+        snd['diff']=snd['depth'].diff()
+        snd = snd[np.abs(snd['diff'])<0.1] # Ignore if 10 minute change greater than 10cm in 10 minutes
+        
     else: 
         log.write('No data from snd\n')
        
@@ -168,15 +180,15 @@ def HMP_pdf_sort(df,start,stop):
         df['Ta']=df['Ta'].astype(float)
         #df['h']=df['h'].astype(int)       
         df = df.sort_values('Date')
-        new_idx = pd.date_range(pd.to_datetime(start).round('1s'),pd.to_datetime(stop).round('1s'),freq='1s' )
+        #new_idx = pd.date_range(pd.to_datetime(start).round('1s'),pd.to_datetime(stop).round('1s'),freq='1s' )
         df.index = pd.DatetimeIndex(df.index)
         df = df[~df.index.duplicated()]
-        #df= df.reindex(new_idx, fill_value=np.NaN)
+        #df= df.reindex(new_idx, method='nearest')
     else:
         df = pd.DataFrame(columns=['RH', 'Ta', 'Tw', 'Err', 'h'])
     return df
 
-def extract_HMP_data(name, start,stop,dpath,logf):
+def extract_HMP_data(name, start,stop,dpath,logf, save):
     # Extract HMP155 data into a pandas array
     # Data format: YYYY MM DD HH MM.mmm TT:TT:TT RH Ta Tw Err hs
     # Ta = seperate probe T, Tw = wetbulb t, hs = heating status
@@ -218,6 +230,10 @@ def extract_HMP_data(name, start,stop,dpath,logf):
     HMP = HMP_pdf_sort(HMP,start,stop)
 
     log.write('Data parse finished\n')
+    if save: 
+        HMP.to_csv(save+'%s_%s'%(name,str(start.date())))
+        log.write('Saved csv')
+
     log.close()
     return HMP
 
