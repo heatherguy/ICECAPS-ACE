@@ -52,7 +52,7 @@ def clean_metek(m_in):
 # wind compents and sonic temperature are cleaned up:
 # - the time series are filtered for outliers, these are replaced with  
 #   median filtered values
-# - missing values from error messages (NaNs) are then interpolated over? - not done yet
+# - missing values from error messages (NaNs) are then interpolated over
     
  # filter for clear outliers - replace with median filtered values
 #set limit at 3*standard deviation of vertical wind component
@@ -110,7 +110,7 @@ def rotate_to_run(m,avp):
     #% First rotate to align x-axis with mean wind direction in sonic's
     #% reference frame
     
-    m_g = m.groupby(pd.TimeGrouper(freq='%sMin'%avp)) # Split df into avp groups. 
+    m_g = m.groupby(pd.Grouper(freq='%sMin'%avp)) # Split df into avp groups. 
     m_out = pd.DataFrame(columns=['x','y','z','T','u','v','w','theta','phi'])
     for group in m_g:
         m = group[1]
@@ -161,9 +161,9 @@ def ogive(x, y, sf,avp):
     f_list=[]
     Csdxy_list=[]
     ogive_list=[]
-    x_g = x.groupby(pd.TimeGrouper(freq='%sMin'%avp)) # Split df into avp groups. 
-    y_g = y.groupby(pd.TimeGrouper(freq='%sMin'%avp)) # Split df into avp groups. 
-    keys = x_g.groups.keys()
+    x_g = x.groupby(pd.Grouper(freq='%sMin'%avp)) # Split df into avp groups. 
+    y_g = y.groupby(pd.Grouper(freq='%sMin'%avp)) # Split df into avp groups. 
+    keys = list(x_g.groups.keys())
     
     for i in range(0,len(keys)):
         x =x_g.get_group(keys[i])
@@ -237,9 +237,9 @@ def shf(w,t,avp):
 # away from the surface into the atmosphere.
     SHF=[]
     stds=[]
-    w_g = w.groupby(pd.TimeGrouper(freq='%sMin'%avp)) # Split df into avp groups. 
-    t_g = t.groupby(pd.TimeGrouper(freq='%sMin'%avp)) # Split df into avp groups. 
-    keys = w_g.groups.keys()
+    w_g = w.groupby(pd.Grouper(freq='%sMin'%avp)) # Split df into avp groups. 
+    t_g = t.groupby(pd.Grouper(freq='%sMin'%avp)) # Split df into avp groups. 
+    keys = list(w_g.groups.keys())
     
     for i in range(0,len(keys)):
         w1 =w_g.get_group(keys[i])
@@ -257,23 +257,29 @@ def shf(w,t,avp):
 
 def lhf(w,T,P,Nconc,avp):
     LHF=[]
-    w_g = w.groupby(pd.TimeGrouper(freq='%sMin'%avp)) # Split df into avp groups. 
-    T_g = T.groupby(pd.TimeGrouper(freq='%sMin'%avp)) # Split df into avp groups. 
-    P_g = P.groupby(pd.TimeGrouper(freq='%sMin'%avp)) # Split df into avp groups. 
-    Nconc_g = Nconc.groupby(pd.TimeGrouper(freq='%sMin'%avp)) # Split df into avp groups. 
-    keys = T_g.groups.keys()
+    w_g = w.groupby(pd.Grouper(freq='%sMin'%avp)) # Split df into avp groups. 
+    T_g = T.groupby(pd.Grouper(freq='%sMin'%avp)) # Split df into avp groups. 
+    P_g = P.groupby(pd.Grouper(freq='%sMin'%avp)) # Split df into avp groups. 
+    Nconc_g = Nconc.groupby(pd.Grouper(freq='%sMin'%avp)) # Split df into avp groups. 
+    keys = list(w_g.groups.keys())
     
     for i in range(0,len(keys)):
         w1 =w_g.get_group(keys[i])
-        T1 = T_g.get_group(keys[i])
-        P1 = P_g.get_group(keys[i])
-        Nconc1 = Nconc_g.get_group(keys[i])
+        try: 
+            T1 = T_g.get_group(keys[i])
+            P1 = P_g.get_group(keys[i])
+            Nconc1 = Nconc_g.get_group(keys[i])
+        except:
+            #print('No licor data for %s'%str(keys[i]))
+            LHF.append(np.nan)
+            continue
+
         mass_conc_air = (Ma*P1)/(R*T1) / 1000       # kg air/ m3
         mass_conc_h2o = (Mh * Nconc1) / 1000   # kg water / m3
         q = mass_conc_h2o / mass_conc_air         # Mass mixing ratio
 
         # Average q onto the same time series as w.
-        q = q.resample('100L').mean().interpolate()
+        q = q.resample('100L').mean().interpolate(method='time',limit=3,limit_direction='both')
         
         # Join data frames so they're the same length, remove nans
         join = pd.concat([q, w1], axis=1, sort=False)
@@ -288,7 +294,9 @@ def lhf(w,T,P,Nconc,avp):
             # q = H2O mixing ratio
             flux,std = eddyflux(join['w'],join[0])
             LHF.append(L * rho * flux)
+            #print('Good licor data')
         else:
+            #print('Not enough good data for %s'%str(keys[i]))
             LHF.append(np.nan)
         
     return LHF
