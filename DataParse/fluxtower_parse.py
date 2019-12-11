@@ -38,7 +38,7 @@ def replace_outliers(var,sd):
 
 
 # KT15 parsing function
-def extract_KT_data(start,stop,dpath,logf,save):
+def extract_KT_data(start,stop,dpath,logf,save=False):
     # Extract KT15 data into a pandas array
     # Data format: YYYY MM DD HH MM.mmm TT.tt C
     # TT.tt = temperature, C = celcius
@@ -208,7 +208,7 @@ def HMP_pdf_sort(df,start,stop):
         df = pd.DataFrame(columns=['RH', 'Ta', 'Tw', 'Err', 'h'])
     return df
 
-def extract_HMP_data(name, start,stop,dpath,logf, save):
+def extract_HMP_data(name, start,stop,dpath,logf,save=False):
     # Extract HMP155 data into a pandas array
     # Data format: YYYY MM DD HH MM.mmm TT:TT:TT RH Ta Tw Err hs
     # Ta = seperate probe T, Tw = wetbulb t, hs = heating status

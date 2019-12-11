@@ -21,7 +21,7 @@ from scipy import io
 
 # Get CPC data
 def get_cpc(d_loc,d1,d2):
-    os.chdir(d_loc+'Data/')                  # Change directory to where the data is
+    os.chdir(d_loc)                  # Change directory to where the data is
     #log = open(log_licor,'w')             # Open the log file for writing
     all_files = glob.glob('*CPC*')
     file_dates = np.asarray([(dt.datetime.strptime(f[-14:-4], '%Y-%m-%d')).date() for f in all_files]) 
@@ -46,7 +46,7 @@ def get_cpc(d_loc,d1,d2):
 ## Get OPC data
     
 def get_opc(opc_n,d_loc,d1,d2):
-    os.chdir(d_loc+'Data/')                  # Change directory to where the data is
+    os.chdir(d_loc)                  # Change directory to where the data is
     #log = open(log_licor,'w')             # Open the log file for writing
     all_files = glob.glob('*%s*OPC*'%opc_n)
     if opc_n=='TAWO':
@@ -103,8 +103,8 @@ def get_opc(opc_n,d_loc,d1,d2):
 #discarded before analysis.
 
 # Function to read and import GRIMM OPC data
-def get_skyopc(d_loc,d1,d2):
-    os.chdir(d_loc+'Data/')                  # Change directory to where the data is
+def get_skyopc(d_loc,d1,d2,save=False):
+    os.chdir(d_loc)                  # Change directory to where the data is
     #log = open(log_licor,'w')             # Open the log file for writing
     all_files = glob.glob('*SKYOPC*')
     file_dates = np.asarray([(dt.datetime.strptime(f[-14:-4], '%Y-%m-%d')).date() for f in all_files])
@@ -205,6 +205,10 @@ def get_skyopc(d_loc,d1,d2):
     skyopc_counts =skyopc_counts / 100.0 # convert from counts/100ml to counts/cm3    
     skyopc_params = skyopc[skyopc.columns[31:]]
     
+    if save: 
+        skyopc_counts.to_csv(save+'SKYOPC_counts_%s'%(str(d1.date())))
+        skyopc_params.to_csv(save+'SKYOPC_params_%s'%(str(d1.date())))
+    
     return skyopc_counts, skyopc_params
 
 # Function to read and process CLASP data
@@ -213,7 +217,7 @@ def get_skyopc(d_loc,d1,d2):
 def get_clasp(d_loc,d1,d2,claspn,channels,calfile,sf):
     # Function to convery interger to binary.
     get_bin = lambda x, n: format(x, 'b').zfill(n)
-    os.chdir(d_loc+'Data/')                  # Change directory to where the data is
+    os.chdir(d_loc)                  # Change directory to where the data is
     #log = open(log_licor,'w')             # Open the log file for writing
     all_files = glob.glob('*%s*'%claspn)
     file_dates = np.asarray([(dt.datetime.strptime(f[-14:-4], '%Y-%m-%d')).date() for f in all_files])
