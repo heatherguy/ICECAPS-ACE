@@ -35,7 +35,9 @@ def extract_tar(dloc,outdir,instr):
         mems = t.getmembers()
         for m in mems:
             if instr in m.name:
-                t.extractall(path=outdir, members=[m])
+                if m.isreg():  # skip if the TarInfo is not files
+                    m.name = os.path.basename(m.name) # remove the path by reset it
+                    t.extract(m,outdir)
         t.close()
         
         
