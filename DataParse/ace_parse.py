@@ -18,105 +18,101 @@ import matplotlib.colors as colors
 import os
 import glob
 from scipy import io
+from utils import * 
+
+
+
+# QC aerosol data: Remove low winds, MSF winds, TAWO winds and flight days. 
+def qc_aerosol(qc_in):
+    sdate = pd.Timestamp(qc_in.index[0].date())
+
+    #   For now 1 is good, zero is bad, 2=no met data
+    qc_in['QC']=np.ones(len(qc_in))
+
+    # Get flight dates
+    flight_dates_f = '/Volumes/Data/ICECAPSarchive/qc_files/flight_days.csv'
+    flight_times = pd.read_csv(flight_dates_f,parse_dates={'Dates':[0],'ondeckUTC':[0,3],'offdeckUTC':[0,4]})
+
+    # See if there are any flight dates in this file
+    if (flight_times['Dates']==sdate).any():
+        # If yes, set flags during flight times to zero.
+        subset = flight_times[flight_times['Dates']==pd.Timestamp(qc_in.index[0].date())]
+        for i in range(0,len(subset)):
+            try:
+                start_time = (pd.to_datetime(subset['ondeckUTC'].iloc[i]) - pd.Timedelta(hours=1)).time()
+            except:
+                start_time = dt.time(0,0)
+            try:
+                stop_time = (pd.to_datetime(subset['offdeckUTC'].iloc[i]) + pd.Timedelta(hours=1)).time()
+            except:
+                stop_time = dt.time(23,59)
+                
+            qc_in['QC'][qc_in.between_time(start_time,stop_time).index]=0
+           
+    # Get Met data     
+    w_dloc = '/Volumes/Data/ICECAPSarchive/Summit_Met/met_sum_insitu_1_obop_minute_%s_%s.txt'%(sdate.year,str(sdate.month).zfill(2))
+    met = get_NOAA_met(w_dloc)
+    try:
+        qc_in['QC'][met['ws']<1]=0
+        qc_in['QC'][met['wd']>270]=0
+    except:
+        # If no met data, QC=2
+        print('No good met data')
+        qc_in['QC']=2
+
+    return qc_in
+
+
 
 # Get CPC data
-def get_cpc(d_loc,d1,d2):
-    os.chdir(d_loc)                  # Change directory to where the data is
-    #log = open(log_licor,'w')             # Open the log file for writing
+def extract_cpc(start,stop,dpath,save=False):
+    os.chdir(dpath)                  # Change directory to where the data is
     all_files = glob.glob('*CPC*')
     file_dates = np.asarray([(dt.datetime.strptime(f[-14:-4], '%Y-%m-%d')).date() for f in all_files]) 
-    idxs = np.where(np.logical_and(file_dates>=d1.date(), file_dates<=d2.date()))[0]
+    idxs = np.where(np.logical_and(file_dates>=start.date(), file_dates<=stop.date()))[0]
     dfs = [all_files[i] for i in idxs]
-    cpc = pd.DataFrame()
     for f in dfs: 
         # Ignore file if it's empty
         if os.path.getsize(f)==0:
-            #log.write('Error with: '+f+' this file is empty.\n')
+            print('Error with: '+f+' this file is empty.\n')
             continue 
-        cpc = cpc.append(pd.read_csv(f,sep=',',error_bad_lines=False,header=None,parse_dates={'Dates' : [0,1,2,3,4,5]}))  
+        cpc = pd.read_csv(f,sep=',',error_bad_lines=False,header=None,parse_dates={'Dates' : [0,1,2,3,4,5]})
+        cpc.Dates = pd.to_datetime(cpc.Dates,format='%Y %m %d %H %M %S')
+        cpc = cpc.sort_values('Dates')
+        cpc = cpc.set_index(cpc['Dates'])
+        cpc.index = pd.DatetimeIndex(cpc.index)
+        del cpc['Dates']
+        cpc = cpc.rename(columns={6:'c/cm3'})
 
-    cpc.Dates = pd.to_datetime(cpc.Dates,format='%Y %m %d %H %M %S')
-    cpc = cpc.sort_values('Dates')
-    cpc = cpc.set_index(cpc['Dates'])
-    cpc.index = pd.DatetimeIndex(cpc.index)
-    del cpc['Dates']
-    cpc_counts =cpc.rename(columns={6:'Concentration (/cm3)'})
-    return cpc_counts
+        # Resample to minutly average
+        new_index = pd.date_range(cpc.index[0],cpc.index[-1] , freq='min')      
+        cpc_1min = cpc.resample('1min').mean()
+        cpc_1min = cpc_1min.reindex(new_index)
 
-## Get OPC data
-    
-def get_opc(opc_n,d_loc,d1,d2):
-    os.chdir(d_loc)                  # Change directory to where the data is
-    #log = open(log_licor,'w')             # Open the log file for writing
-    all_files = glob.glob('*%s*OPC*'%opc_n)
-    if opc_n=='TAWO':
-        file_dates = np.asarray([(dt.datetime.strptime(f[-12:-4], '%Y%m%d')).date() for f in all_files])
-    else:
-        file_dates = np.asarray([(dt.datetime.strptime(f[-14:-4], '%Y-%m-%d')).date() for f in all_files])
-           
-    idxs = np.where(np.logical_and(file_dates>=d1.date(), file_dates<=d2.date()))[0]
-    dfs = [all_files[i] for i in idxs]
-    opc = pd.DataFrame()
-    # Extract the data
-    for f in dfs: 
-        # Ignore file if it's empty
-        if os.path.getsize(f)==0:
-            #log.write('Error with: '+f+' this file is empty.\n')
-            continue 
-        opc = opc.append(pd.read_csv(f, skiprows=4,sep=',',error_bad_lines=False))  
-    opc['Dates'] = pd.to_datetime(opc['time'],format='%Y-%m-%d %H:%M:%S')
-    opc = opc.sort_values('Dates')
-    opc = opc.set_index(opc['Dates'])
-    opc.index = pd.DatetimeIndex(opc.index)
-    #opc = opc[~opc.index.duplicated()]
-    del opc['time'], opc['Dates']
+        # QC
+        cpc_qcd = qc_aerosol(cpc_1min)
+        
+        # Save if neccesary
+        if save:
+            cpc_qcd.to_csv(save+'CPC_%s'%(str(start.date())))
 
-    # Convert flow rate from L/min to cm3/s
-    # 1 L/min = 16.66667 cm3/s
-    opc.FlowRate = opc.FlowRate/100 * 16.66667
+    return
 
-    opc_counts = opc[opc.columns[0:24]]
-    opc_counts = opc_counts.apply(pd.to_numeric, errors='coerce')
-    opc_params = opc[opc.columns[24:]]
-    
-    # Convert counts/interval to total counts/s
-    opc.period = opc.period/100.0 # period in s
-    opc_counts = opc_counts.divide(opc.period, axis=0)
-    # Convert total counts/second to counts/cm3
-    opc_counts = opc_counts.divide(opc.FlowRate, axis=0)
-
-    return opc_counts, opc_params
-
-# Function to read SKYOPC data
-# Get SKYOPC Data
-# Measurement interval 6 seconds
-# I think C0 = time
-# C1 = time + 6 s
-# C2 = time + 12 s
-# ect.
-# 32 channels 
-# data output in the unit particle/100ml
-# SKYOPC chaneel boundaries:
-#0.25,0.28,0.3,0.35,0.4,0.45,0.5,0.58,0.65,0.7,0.8,1.0,1.3,1.6,2,2.5,3,3.5,4,5,6.5,7.5,8.5,10,12.5,15,17.5,20,25,30,32 
-#channels 16 and 17 are identical (overlapping 
-#channel for different physical measurement ranges)...so one should be 
-#discarded before analysis.
 
 # Function to read and import GRIMM OPC data
-def get_skyopc(d_loc,d1,d2,save=False):
-    os.chdir(d_loc)                  # Change directory to where the data is
-    #log = open(log_licor,'w')             # Open the log file for writing
+def extract_skyopc(start,stop,dpath,save=False):
+    os.chdir(dpath)                  # Change directory to where the data is
     all_files = glob.glob('*SKYOPC*')
     file_dates = np.asarray([(dt.datetime.strptime(f[-14:-4], '%Y-%m-%d')).date() for f in all_files])
-    idxs = np.where(np.logical_and(file_dates>=d1.date(), file_dates<=d2.date()))[0]
+    idxs = np.where(np.logical_and(file_dates>=start.date(), file_dates<=stop.date()))[0]
     dfs = [all_files[i] for i in idxs]
-    skyopc = pd.DataFrame()
     c=np.nan
+    skyopc = pd.DataFrame()
     # Extract the data
     for f in dfs: 
         # Ignore file if it's empty
         if os.path.getsize(f)==0:
-            #log.write('Error with: '+f+' this file is empty.\n')
+            print('Error with: '+f+' this file is empty.\n')
             continue 
         f_data = open(f)
         d = f_data.readlines()
@@ -184,205 +180,250 @@ def get_skyopc(d_loc,d1,d2,save=False):
                 n = int(line[0][-2])
                 if isinstance(datetime,dt.datetime):
                     skyopc = skyopc.append(pd.Series([datetime+dt.timedelta(seconds=n*6), ch1, ch2, ch3, ch4, ch5, ch6, ch7, ch8, ch9, ch10, ch11, ch12, ch13, ch14, ch15, ch16, ch17, ch18, ch19, ch20, ch21, ch22, ch23, ch24, ch25, ch26, ch27, ch28, ch29, ch30, ch31, ch32, quad_Tmp,Err,pAp,pRp,Int]),ignore_index=True)
+
+    try: 
+        # remove repeated channel 16
+        del skyopc[16]
+        # Correct counts for size bins 'all counts above lower threshold.'        
+        for i in range(2,16):
+            skyopc[i-1]=skyopc[i-1]-skyopc[i]
+        for i in range(18,33):
+            skyopc[i-1]=skyopc[i-1]-skyopc[i]
+    
+        skyopc=skyopc.rename(columns={0: 'Date',1:'ch1' ,2: 'ch2', 3: 'ch3',4: 'ch4',5: 'ch5',6: 'ch6',7: 'ch7',8: 'ch8',9: 'ch9',10: 'ch10',11: 'ch11',12: 'ch12',13: 'ch13',14: 'ch14',15: 'ch15',16: 'ch16',17: 'ch17',18: 'ch18',19: 'ch19', 20:'ch20',21: 'ch21',22: 'ch22',23: 'ch23',24: 'ch24',25: 'ch25',26: 'ch26',27: 'ch27',28: 'ch28',29: 'ch29',30: 'ch30',31: 'ch31',32: 'ch32',33: 'quad_Tmp',34:'Err',35:'pAp',36:'pRp',37:'Int'})
+        skyopc.dropna(inplace=True)
+        skyopc = skyopc.set_index('Date')
+        skyopc = skyopc.sort_values('Date')
+        skyopc.index = pd.DatetimeIndex(skyopc.index)
+        skyopc = skyopc[~skyopc.index.duplicated()]
+    
+        # QC for params
+        skyopc[skyopc['pAp']>120]=np.nan
+        skyopc[skyopc['pRp']>120]=np.nan  
+        skyopc[skyopc['Err']!=0]=np.nan
+        skyopc[skyopc['Int']!=6]=np.nan
+    
+        skyopc_counts = skyopc[skyopc.columns[0:31]]
+        skyopc_counts = skyopc_counts.apply(pd.to_numeric, errors='coerce') # Counts in counts/ 6 seconds
+        skyopc_counts =skyopc_counts / 100.0 # convert from counts/100ml to counts/cm3    
+        skyopc_params = skyopc[skyopc.columns[31:]]
+    
+        # Resample to minutly average
+        new_index = pd.date_range(skyopc.index[0].round('min'),skyopc.index[-1].round('min'), freq='min')      
+        skyopc_1min = skyopc_counts.resample('1min').mean()
+        skyopc_1min = skyopc_1min.reindex(new_index)
+    
+        # QC
+        skyopc_qcd = qc_aerosol(skyopc_1min)
+        
+    
+        if save: 
+            skyopc_qcd.to_csv(save+'SKYOPC_%s'%(str(start.date())))
+            skyopc_params.to_csv(save+'SKYOPC_params_%s'%(str(start.date())))
+
+    except:
+        print('no data')
+    
+    return 
+
+
+
+## Get OPC data
+    
+def extract_opc(opc_n,start,stop,dpath,save=False):
+    os.chdir(dpath)                  # Change directory to where the data is
+    all_files = glob.glob('*%s*OPC*'%opc_n)
+    if opc_n=='TAWO':
+        file_dates = np.asarray([(dt.datetime.strptime(f[-12:-4], '%Y%m%d')).date() for f in all_files])
+    else:
+        file_dates = np.asarray([(dt.datetime.strptime(f[-14:-4], '%Y-%m-%d')).date() for f in all_files])
+           
+    idxs = np.where(np.logical_and(file_dates>=start.date(), file_dates<=stop.date()))[0]
+    dfs = [all_files[i] for i in idxs]
+    opc = pd.DataFrame()
+    
+    if len(dfs)!=0: 
+        # Extract the data
+        for f in dfs: 
+            # Ignore file if it's empty
+            if os.path.getsize(f)==0:
+                print('Error with: '+f+' this file is empty.\n')
+                continue 
+            opc = opc.append(pd.read_csv(f, skiprows=4,sep=',',error_bad_lines=False))  
+            opc['Dates'] = pd.to_datetime(opc['time'],format='%Y-%m-%d %H:%M:%S')
+            opc = opc.sort_values('Dates')
+            opc = opc.set_index(opc['Dates'])
+            opc.index = pd.DatetimeIndex(opc.index)
+            #opc = opc[~opc.index.duplicated()]
+            del opc['time'], opc['Dates']
+
+        # Convert flow rate from L/min to cm3/s
+        # 1 L/min = 16.66667 cm3/s
+        opc.FlowRate = opc.FlowRate/100 * 16.66667
+
+        opc_counts = opc[opc.columns[0:24]]
+        opc_counts = opc_counts.apply(pd.to_numeric, errors='coerce')
+        opc_params = opc[opc.columns[24:]]
+    
+        # Convert counts/interval to total counts/s
+        opc.period = opc.period/100.0 # period in s
+        opc_counts = opc_counts.divide(opc.period, axis=0)
+        # Convert total counts/second to counts/cm3
+        opc_counts = opc_counts.divide(opc.FlowRate, axis=0)
+    
+    
+        # QC for OPC params. 
+        opc_counts[opc_params['period']>500] = np.nan
+        opc_counts[opc_params['period']<400] = np.nan
+
+    
+        # Resample to minutly average
+        new_index = pd.date_range(opc_counts.index[0].round('min'),opc_counts.index[-1].round('min') , freq='min')      
+        opc_1min = opc_counts.resample('1min').mean()
+        opc_1min = opc_1min.reindex(new_index)
+    
+        # QC for winds and flight days
+        opc_qc = qc_aerosol(opc_1min)
+    
+    
+        # Save if neccessary
+        if save: 
+            opc_qc.to_csv(save+'%s_OPC_%s'%(opc_n,str(start.date())))
+            opc_params.to_csv(save+'%s_OPC_params_%s'%(opc_n,str(start.date())))
             
-    # remove repeated channel 16
-    del skyopc[16]
-    # Correct counts for size bins 'all counts above lower threshold.'        
-    for i in range(2,16):
-        skyopc[i-1]=skyopc[i-1]-skyopc[i]
-    for i in range(18,33):
-        skyopc[i-1]=skyopc[i-1]-skyopc[i]
-    
-    skyopc=skyopc.rename(columns={0: 'Date',1:'ch1' ,2: 'ch2', 3: 'ch3',4: 'ch4',5: 'ch5',6: 'ch6',7: 'ch7',8: 'ch8',9: 'ch9',10: 'ch10',11: 'ch11',12: 'ch12',13: 'ch13',14: 'ch14',15: 'ch15',16: 'ch16',17: 'ch17',18: 'ch18',19: 'ch19', 20:'ch20',21: 'ch21',22: 'ch22',23: 'ch23',24: 'ch24',25: 'ch25',26: 'ch26',27: 'ch27',28: 'ch28',29: 'ch29',30: 'ch30',31: 'ch31',32: 'ch32',33: 'quad_Tmp',34:'Err',35:'pAp',36:'pRp',37:'Int'})
-    skyopc.dropna(inplace=True)
-    skyopc = skyopc.set_index('Date')
-    skyopc = skyopc.sort_values('Date')
-    skyopc.index = pd.DatetimeIndex(skyopc.index)
-    skyopc = skyopc[~skyopc.index.duplicated()]
-    
-    skyopc_counts = skyopc[skyopc.columns[0:31]]
-    skyopc_counts = skyopc_counts.apply(pd.to_numeric, errors='coerce') # Counts in counts/ 6 seconds
-    skyopc_counts =skyopc_counts / 100.0 # convert from counts/100ml to counts/cm3    
-    skyopc_params = skyopc[skyopc.columns[31:]]
-    
-    if save: 
-        skyopc_counts.to_csv(save+'SKYOPC_counts_%s'%(str(d1.date())))
-        skyopc_params.to_csv(save+'SKYOPC_params_%s'%(str(d1.date())))
-    
-    return skyopc_counts, skyopc_params
+        return
+    else:
+        print('No data for %s'%str(start))
+        return
+
 
 # Function to read and process CLASP data
 # Inputs
 
-def get_clasp(d_loc,d1,d2,claspn,channels,calfile,sf):
+def get_clasp(d_loc,d1,d2,claspn,calfile,save=False):
     # Function to convery interger to binary.
     get_bin = lambda x, n: format(x, 'b').zfill(n)
     os.chdir(d_loc)                  # Change directory to where the data is
-    #log = open(log_licor,'w')             # Open the log file for writing
     all_files = glob.glob('*%s*'%claspn)
     file_dates = np.asarray([(dt.datetime.strptime(f[-14:-4], '%Y-%m-%d')).date() for f in all_files])
     idxs = np.where(np.logical_and(file_dates>=d1.date(), file_dates<=d2.date()))[0]
     dfs = [all_files[i] for i in idxs]
-    data_block=[]
-    for f in dfs: 
-        # Read in the data
-        fid = open(f)
-        data_block.append(list(filter(('\n').__ne__, fid.readlines())))
-        fid.close()
-        
-    data_block=list(np.concatenate(data_block))
-     
-    # Initialise empty dataframes
-    dates = []
-    CLASP = np.ones([np.shape(data_block)[0],16])*-999  # Counts
-    statusaddr = np.ones(np.shape(data_block)[0])*-999  # Status address
-    parameter = np.ones(np.shape(data_block)[0])*-999   # Parameter value
-    overflow = np.ones(np.shape(data_block)[0])*-999    # Overflow (channel 1-8 only)
+
+    #CLASP = np.ones([np.shape(data_block)[0],16])*-999  # Counts
+    #statusaddr = np.ones(np.shape(data_block)[0])*-999  # Status address
+    #parameter = np.ones(np.shape(data_block)[0])*-999   # Parameter value
+    #overflow = np.ones(np.shape(data_block)[0])*-999    # Overflow (channel 1-8 only)
     #flow_check = np.ones(len(data_block))*-999  # True if flow is in range - this is too stringent, can ignore
-    heater = np.ones(np.shape(data_block)[0])*-999      # True if heater is on
+    #heater = np.ones(np.shape(data_block)[0])*-999      # True if heater is on
     #sync = np.ones(len(data_block))*-999       # CAN IGNORE THIS - it's not connected
 
     # Loop through, extract and sort data into the dataframes initialised above
-    for i in range(0,np.shape(data_block)[0]):
-        split = data_block[i].split()
-        # Extract and store dates
-        date = dt.datetime(int(split[0]),int(split[1]),int(split[2]),
-                           int(split[3]),int(split[4]),
-                           int(np.floor(float(split[5])))) 
-        dates.append(date)   
-
-        if len(split)!=25:
+    #for i in range(0,np.shape(data_block)[0]):
+    for f in dfs:
+        # Ignore file if it's empty
+        if os.path.getsize(f)==0:
+            print('Error with: '+f+' this file is empty.\n')
+            continue 
+        
+        CLASP = pd.read_csv(f,header=None,delim_whitespace=True, parse_dates={'Dates' : [0,1,2,3,4,5]},error_bad_lines=False)
+        if np.shape(CLASP)[1]!=20:
+            print('Issues with CLASP file %s'%f)
             continue
+
+        CLASP['Dates'] = pd.to_datetime(CLASP['Dates'],format='%Y %m %d %H %M %S')
+        CLASP = CLASP.sort_values('Dates')
+        CLASP = CLASP.set_index(CLASP['Dates'])
+        CLASP.index = pd.DatetimeIndex(CLASP.index)
+        CLASP = CLASP[~CLASP.index.duplicated()]
+        
+        del CLASP['Dates']
+        CLASP.columns = ['status', 'value','overflow','1','2','3','4','5','6','7','8','9','10','11','12','13','14','15','16']
     
-        # Extract and store counts
-        for x in range(0,16):
-            CLASP[i,x] = float(split[-16:][x])    
-    
-        # Extract, and convert staus addresses, store flags
-        statusbyte=float(split[6])
-        binary=get_bin(int(statusbyte),8)
-        statusaddr[i] = int(binary[4:8],2)
-        heater[i] = int(binary[2])       # check you have these the right way around
-         
-        # Extract and store status parameters and overflow flag
-        parameter[i]=float(split[7])
-        overflow[i]=float(split[8])  
-      
-        # Check overflow flags and correct histogram. 
-        # Overflow is for channels 1 to 8 only.
-        for n in range(0,8):
-            obin=get_bin(int(overflow[i]),8)
-            if int(obin[::-1][0]):
-                #print('overfow recorded')
-                CLASP[i,n] = CLASP[i,n] + 256
+        # Extract, and convert staus addresses
+        #statusbyte=float(split[6])
+        binary=[]
+        statusaddr=[]
+        heater=[]
+        for i in range(0,len(CLASP)):
+            try:
+                bi = get_bin(int(CLASP['status'].iloc[i]),8)
+
+                # Check overflow flags and correct histogram
+                # Overflow is for channels 1 to 8 only
+                obin=get_bin(int(CLASP['overflow'].iloc[i]),8)
+                for n in range(0,8):
+                    if int(obin[n])>0:
+                        CLASP[str(n)].iloc[i] = CLASP[str(n)].iloc[i] + int(obin[n]) * 256
                 
-        # Arrange parameters into a neat dataframe
-    param_len = int(len(statusaddr)/10)
+                statusaddr.append(int(bi[4:8],2))
+                heater.append(int(bi[2]))
+                
+            except:
+                CLASP.iloc[i]=np.nan
+                heater.append(np.nan)
+                binary.append(np.nan)
+                statusaddr.append(np.nan)
+                    
+        statusaddr = np.asarray(statusaddr)
+        CLASP['heater']=heater
     
-    rejects = parameter[np.where(statusaddr==0)[0][0:param_len]]
-    threshold = parameter[np.where(statusaddr==1)[0][0:param_len]]
-    ThisFlow = parameter[np.where(statusaddr==2)[0][0:param_len]]
-    FlowPWM = parameter[np.where(statusaddr==3)[0][0:param_len]]
-    PumpCurrent = parameter[np.where(statusaddr==4)[0][0:param_len]]
-    SensorT = parameter[np.where(statusaddr==5)[0][0:param_len]]
-    HousingT = parameter[np.where(statusaddr==6)[0][0:param_len]]
-    PumpT = parameter[np.where(statusaddr==7)[0][0:param_len]]
-    SupplyV = parameter[np.where(statusaddr==8)[0][0:param_len]]
-    LaserR  = parameter[np.where(statusaddr==9)[0][0:param_len]]
-    param_dates = np.asarray(dates)[np.where(statusaddr==0)[0][0:param_len]]
+        # Arrange parameters into a neat dataframe  
+        param_df = pd.DataFrame()
+        param_len = int(len(statusaddr)/10)
+        parameter = CLASP['value']
+        param_df['rejects'] = parameter[np.where(statusaddr==0)[0][0:param_len]].resample('1min').mean()
+        param_df['threshold'] = parameter[np.where(statusaddr==1)[0][0:param_len]].resample('1min').mean()
+        param_df['ThisFlow']= parameter[np.where(statusaddr==2)[0][0:param_len]].resample('1min').mean()
+        param_df['FlowPWM'] = parameter[np.where(statusaddr==3)[0][0:param_len]].resample('1min').mean()
+        param_df['PumpCurrent'] = parameter[np.where(statusaddr==4)[0][0:param_len]].resample('1min').mean()
+        param_df['SensorT'] = parameter[np.where(statusaddr==5)[0][0:param_len]].resample('1min').mean()
+        param_df['HousingT'] = parameter[np.where(statusaddr==6)[0][0:param_len]].resample('1min').mean()
+        param_df['PumpT'] = parameter[np.where(statusaddr==7)[0][0:param_len]].resample('1min').mean()
+        param_df['SupplyV'] = parameter[np.where(statusaddr==8)[0][0:param_len]].resample('1min').mean()
+        param_df['LaserR']  = parameter[np.where(statusaddr==9)[0][0:param_len]].resample('1min').mean()
+        param_df['heater'] = CLASP['heater'].resample('1min').max()
+
+        del CLASP['status'],CLASP['value'],CLASP['overflow'],CLASP['heater']
    
-    if len(param_dates)<param_len:
-        param_len = len(param_dates)
-    if len(rejects)<param_len:
-        param_len = len(rejects)
-    if len(threshold)<param_len:
-        param_len = len(threshold)
-    if len(ThisFlow)<param_len:
-        param_len = len(ThisFlow)
-    if len(FlowPWM)<param_len:
-        param_len = len(FlowPWM)
-    if len(PumpCurrent)<param_len:
-        param_len = len(PumpCurrent)
-    if len(SensorT)<param_len:
-        param_len = len(SensorT)
-    if len(HousingT)<param_len:
-        param_len = len(HousingT)
-    if len(PumpT)<param_len:
-        param_len = len(PumpT)
-    if len(SupplyV)<param_len:
-        param_len = len(SupplyV)
-    if len(LaserR)<param_len:
-        param_len = len(LaserR)
+        # Resample to minutly average
+        new_index = pd.date_range(CLASP.index[0].round('min'),CLASP.index[-1].round('min'), freq='min')      
+        CLASP_1min = CLASP.resample('1min').mean()
+        CLASP_1min = CLASP_1min.reindex(new_index)
 
-    param_dates = np.asarray(dates)[np.where(statusaddr==0)[0][0:param_len]] 
-    rejects = parameter[np.where(statusaddr==0)[0][0:param_len]]
-    threshold = parameter[np.where(statusaddr==1)[0][0:param_len]]
-    ThisFlow = parameter[np.where(statusaddr==2)[0][0:param_len]]
-    FlowPWM = parameter[np.where(statusaddr==3)[0][0:param_len]]
-    PumpCurrent = parameter[np.where(statusaddr==4)[0][0:param_len]]
-    SensorT = parameter[np.where(statusaddr==5)[0][0:param_len]]
-    HousingT = parameter[np.where(statusaddr==6)[0][0:param_len]]
-    PumpT = parameter[np.where(statusaddr==7)[0][0:param_len]]
-    SupplyV = parameter[np.where(statusaddr==8)[0][0:param_len]]
-    LaserR  = parameter[np.where(statusaddr==9)[0][0:param_len]]
+        # Apply flow corrections and quality flags, 
+        # convert raw counts to concentrations in particles per ml.
+        # Get calibration data
+        cal_dict=io.loadmat(calfile,matlab_compatible=True)
+        TSIflow = cal_dict['calibr'][0][0][8][0]         # array of calibration flow rates from TSI flow meter
+        realflow = cal_dict['calibr'][0][0][9][0]        # array of measured A2D flow rates matching TSflow
 
-    param_df=pd.DataFrame({'Date':param_dates,'Rejects (n)':rejects,'Threshold (mV)':threshold,
-                        'ThisFlow':ThisFlow,'FlowPWM':FlowPWM,'PumpCurrent (mA)':PumpCurrent,
-                        'SensorT (C)':SensorT,'HousingT (C)':HousingT,'PumpT (C)':PumpT,
-                        'SupplyV':SupplyV,'LaserR':LaserR})
+        # Do flow correction and convert to concentations
+        # TSI flow is from the TSI flowmeter, realflow is the flow the CLASP records internally
+        P = np.polyfit(realflow,TSIflow,2) # These are from the flow calibration - fit a polynomial
+        flow = np.polyval(P,param_df['ThisFlow']) # flow in L/min
+        param_df['Sample volume (ml/s)'] = ((flow/60)*1000)/1
 
-    param_df = param_df.set_index('Date')
-    param_df.index = pd.DatetimeIndex(param_df.index)
-    param_df = param_df[~param_df.index.duplicated()]
-
-    # Arrange Counts into a neat dataframe
-    CLASP_df = pd.DataFrame({'Date':dates,
-                        1:CLASP[:,0],2:CLASP[:,1],
-                        3:CLASP[:,2],4:CLASP[:,3], 5:CLASP[:,4],
-                        6:CLASP[:,5],7:CLASP[:,6],8:CLASP[:,7],9:CLASP[:,8],
-                        10:CLASP[:,9],11:CLASP[:,10],12:CLASP[:,11], 
-                        13:CLASP[:,12],14:CLASP[:,13],15:CLASP[:,14],16:CLASP[:,15]})
-    CLASP_df = CLASP_df.set_index('Date')
-    CLASP_df.index = pd.DatetimeIndex(CLASP_df.index)
-    CLASP_df = CLASP_df[~CLASP_df.index.duplicated()]
-    CLASP_df = pd.concat([CLASP_df, param_df], axis=1)
-
-    # Apply flow corrections and quality flags, 
-    # convert raw counts to concentrations in particles per ml.
-    # Get calibration data
-    cal_dict=io.loadmat(calfile,matlab_compatible=True)
-    TSIflow = cal_dict['calibr'][0][0][8][0]         # array of calibration flow rates from TSI flow meter
-    realflow = cal_dict['calibr'][0][0][9][0]        # array of measured A2D flow rates matching TSflow
-
-    # Do flow correction and convert to concentations
-    # TSI flow is from the TSI flowmeter, realflow is the flow the CLASP records internally
-    P = np.polyfit(realflow,TSIflow,2) # These are from the flow calibration - fit a polynomial
-    flow = np.polyval(P,CLASP_df['ThisFlow']) # flow in L/min
-    flow_correction = ((flow/60)*1000)/sf # Sample volume in cm3/s
-
-    # Interpolate flow correction onto full timeseries and add to array
-    def nan_helper(y):
-        return np.isnan(y), lambda z: z.nonzero()[0]
-    nans, x= nan_helper(flow_correction)
-    flow_correction[nans]= np.interp(x(nans), x(~nans), flow_correction[~nans])
-    CLASP_df['Sample volume (ml/s)']=flow_correction
+        # Now to plot concentrations in counts/cm3, just need to divide the counts/s by the sample volume
+        CLASP_1min = CLASP_1min.apply(pd.to_numeric, errors='coerce')
+        clasp_conc = CLASP_1min.divide(param_df['Sample volume (ml/s)'],axis=0)
+   
+        # QC for params
+        # Currently not implemented. 
+        
+        # QC for winds/ flight days
+        clasp_qcd = qc_aerosol(clasp_conc)
     
+        # Save if neccessary
+        if save: 
+            clasp_qcd.to_csv(save+'%s_%s'%(claspn,str(d1.date())))
+            param_df.to_csv(save+'%s_params_%s'%(claspn,str(d1.date())))
+        
+    
+    return
 
-    # Now to plot concentrations in counts/cm3, just need to divide the counts/s by the sample volume
-    clasp_counts = CLASP_df[CLASP_df.columns[0:16]]
-    clasp_params = CLASP_df[CLASP_df.columns[16:]]
-    clasp_counts = clasp_counts.apply(pd.to_numeric, errors='coerce')
-    clasp_counts = clasp_counts.divide(flow_correction, axis=0)
-    
-    # CLASP-G flowrate = 3L/minute = 50 cm3/second
-    # Units: particle counts/ sample interval
-    # Sample interval: 1s
-    # Calculate total counts
-    # Calculate concentation
-    
-    #CLASP_df['Concentration (/cm3)'] = CLASP_df['total_counts'] / 50 #counts/cm3
-    
-    return clasp_counts,clasp_params
+
+
+
 
 # Plot aerosol size distribution spectra
 def get_dist(df,nbins,bounds):

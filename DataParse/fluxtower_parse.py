@@ -38,13 +38,12 @@ def replace_outliers(var,sd):
 
 
 # KT15 parsing function
-def extract_KT_data(start,stop,dpath,logf,save=False):
+def extract_KT_data(start,stop,dpath,qcf,save=False):
     # Extract KT15 data into a pandas array
     # Data format: YYYY MM DD HH MM.mmm TT.tt C
     # TT.tt = temperature, C = celcius
 
     os.chdir(dpath)                  # Change directory to where the data is
-    log = open(logf,'w')             # Open the log file for writing
     all_files = glob.glob('*.KT15')  # List all data files
 
     # Get start and stop filenames
@@ -63,7 +62,7 @@ def extract_KT_data(start,stop,dpath,logf,save=False):
     for f in dfs: 
         # Ignore file if it's empty or contains non-ascii characters
         if os.path.getsize(f)==0:
-            log.write('Error with: '+f+' this file is empty.\n')
+            print('Error with: '+f+' this file is empty.\n')
             continue
 
         # Filter and report files with non-ascii characters
@@ -71,32 +70,62 @@ def extract_KT_data(start,stop,dpath,logf,save=False):
         try:
             content.encode('ascii')
         except UnicodeDecodeError:
-            log.write("Error with: %s contains non-ascii characters.\n"%f)  
+            print("Error with: %s contains non-ascii characters.\n"%f)  
             continue
         
-        # Store good data      
+        # Store good data  
         KT = KT.append(pd.read_csv(f, header=None, delim_whitespace=True))
-       
+
     # Sort out the date referencing and columns
     if KT.empty==False:
         KT[5] = KT[5].astype(int)
         KT['Date'] = pd.to_datetime(KT[0]*10000000000+KT[1]*100000000+KT[2]*1000000+KT[3]*10000+KT[4]*100+KT[5],format='%Y%m%d%H%M%S')
         KT = KT.set_index('Date')
         del KT[0],KT[1],KT[2],KT[3],KT[4],KT[5]
-        KT.columns = ['T', 'Units']
-        KT = KT.sort_values('Date')
-        #new_idx = pd.date_range(pd.to_datetime(str(start_f),format='%y%m%d'),pd.to_datetime(str(stop_f),format='%y%m%d'),freq='1s' )
-        KT.index = pd.DatetimeIndex(KT.index)
-        KT = KT[~KT.index.duplicated()]
-        #KT= KT.reindex(new_idx, fill_value=np.NaN)
-        log.write('Data parse finished\n')
-        if save: 
-            KT.to_csv(save+'KT_%s'%(str(start.date())))
-            log.write('Saved csv')
-    else:
-        log.write('No KT data found for this period')
+        if np.shape(KT)[1]==2:
+            KT.columns = ['T', 'Units']
+            KT = KT.sort_values('Date')
+            #new_idx = pd.date_range(pd.to_datetime(str(start_f),format='%y%m%d'),pd.to_datetime(str(stop_f),format='%y%m%d'),freq='1s' )
+            KT.index = pd.DatetimeIndex(KT.index)
+            KT = KT[~KT.index.duplicated()]
+            #KT= KT.reindex(new_idx, fill_value=np.NaN)
+
+            # Resample to 1 minute averages. 
+            new_index = pd.date_range(KT.index[0].round('min'),KT.index[-1].round('min') , freq='min')      
+            KT_1min = KT.resample('1min').mean()
+            KT_1min = KT_1min.reindex(new_index)
     
-    log.close()
+            # Crop to datetime
+            KT=KT_1min[start:stop]
+    
+            # QC 
+            KT['QC']=np.ones(len(KT))
+            bad_times = pd.read_csv(qcf,parse_dates={'start_dates':[0],'stop_dates':[1]},header=None)
+            sdate = pd.Timestamp(KT.index[0].date())
+        
+            # See if there are any bad dates in this file
+            if (bad_times['start_dates'].dt.date==sdate).any():
+                # If yes, set flags during flight times to zero.
+                subset = bad_times[bad_times['start_dates'].dt.date==sdate]
+                for i in range(0,len(subset)):
+                    start_date = (pd.to_datetime(subset['start_dates'].iloc[i])).date()
+                    stop_date = (pd.to_datetime(subset['stop_dates'].iloc[i])).date()
+                    start_time = (pd.to_datetime(subset['start_dates'].iloc[i])).time()
+                    stop_time = (pd.to_datetime(subset['stop_dates'].iloc[i])).time()
+                
+                    if start_date == stop_date:
+                        KT['QC'][KT.between_time(start_time,stop_time).index]=0
+                    else:
+                        KT['QC'][KT.between_time(start_time,datetime.time(23,59,59)).index]=0
+     
+            if save: 
+                KT.to_csv(save+'KT_%s'%(str(start.date())))
+        else:
+            print('Bad data file')
+
+    else:
+        print('No KT data found for this period')
+
     return KT
 
 # SnD parsing
