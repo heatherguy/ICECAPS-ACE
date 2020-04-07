@@ -84,7 +84,11 @@ def get_NOAA_met(w_dloc):
         if data[i][4:20]=='':
             continue       
         else:
-            all_dates.append(pd.to_datetime(data[i][4:20],format='%Y %m %d %H %M'))
+            try:
+                all_dates.append(pd.to_datetime(data[i][4:20],format='%Y %m %d %H %M'))
+            except:
+                all_dates.append(pd.to_datetime(data[i][4:20],format='%Y %m %d %H'))
+
             all_data.append(list(map(float, data[i][20:].split())))
 
     wd = [int(x[0]) for x in all_data]

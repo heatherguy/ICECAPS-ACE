@@ -6,24 +6,33 @@ Created on Fri Sep 13 22:32:23 2019
 @author: heather
 """
 
-import matplotlib
-#matplotlib.use('Agg')
 import numpy as np
 import datetime as dt
-import matplotlib.pyplot as plt
-import matplotlib.dates as md
 import pandas as pd
-from matplotlib import rcParams
-import matplotlib.colors as colors
 import os
 import glob
 from scipy import io
 from utils import * 
 
-
-
 # QC aerosol data: Remove low winds, MSF winds, TAWO winds and flight days. 
 def qc_aerosol(qc_in):
+    """
+    Function to QC aerosol data. 
+    Flags low winds
+    Flags winds coming from across station
+    Flags flight days.
+   
+    Parameters:
+        qc_in:      Data to qc
+        
+    Returns:
+        dataframe with additional qc flag
+        0 = bad data
+        1 = good data
+        2 = no met data available for wind flagging.
+    
+    """
+
     sdate = pd.Timestamp(qc_in.index[0].date())
 
     #   For now 1 is good, zero is bad, 2=no met data
@@ -51,8 +60,8 @@ def qc_aerosol(qc_in):
            
     # Get Met data     
     w_dloc = '/Volumes/Data/ICECAPSarchive/Summit_Met/met_sum_insitu_1_obop_minute_%s_%s.txt'%(sdate.year,str(sdate.month).zfill(2))
-    met = get_NOAA_met(w_dloc)
     try:
+        met = get_NOAA_met(w_dloc)
         qc_in['QC'][met['ws']<1]=0
         qc_in['QC'][met['wd']>270]=0
     except:
@@ -64,8 +73,20 @@ def qc_aerosol(qc_in):
 
 
 
-# Get CPC data
 def extract_cpc(start,stop,dpath,save=False):
+    """
+    Extracts cpc data from raw output. 
+    QC's for bad data. 
+    Resamples to 1 minutely medians
+    Saves as .csv if requested
+    
+    Parameters:
+        start: Start datetime for processing
+        stop:  Stop datetime for processing
+        dpath: Raw data filepath
+        save:  Output directory (optional)
+    
+    """
     os.chdir(dpath)                  # Change directory to where the data is
     all_files = glob.glob('*CPC*')
     file_dates = np.asarray([(dt.datetime.strptime(f[-14:-4], '%Y-%m-%d')).date() for f in all_files]) 
@@ -85,13 +106,14 @@ def extract_cpc(start,stop,dpath,save=False):
         cpc = cpc.rename(columns={6:'c/cm3'})
 
         # Resample to minutly average
-        new_index = pd.date_range(cpc.index[0],cpc.index[-1] , freq='min')      
-        cpc_1min = cpc.resample('1min').mean()
+        new_index = pd.date_range(start,start + pd.Timedelta(minutes=(24*60)-1), freq='min')      
+        cpc_1min = cpc.resample('1min').median()
         cpc_1min = cpc_1min.reindex(new_index)
 
         # QC
         cpc_qcd = qc_aerosol(cpc_1min)
-        
+        cpc_qcd['QC'][cpc_qcd['c/cm3']==0]=0
+        cpc_qcd['QC'][cpc_qcd['c/cm3']==np.nan]=0        
         # Save if neccesary
         if save:
             cpc_qcd.to_csv(save+'CPC_%s'%(str(start.date())))
@@ -99,8 +121,20 @@ def extract_cpc(start,stop,dpath,save=False):
     return
 
 
-# Function to read and import GRIMM OPC data
 def extract_skyopc(start,stop,dpath,save=False):
+    """
+    Extracts skyopc data from raw output. 
+    QC's for bad data. 
+    resamples to 1 minutely median
+    Saves as .csv if requested
+    
+    Parameters:
+        start: Start datetime for processing
+        stop:  Stop datetime for processing
+        dpath: Raw data filepath
+        save:  Output directory (optional)
+    
+    """
     os.chdir(dpath)                  # Change directory to where the data is
     all_files = glob.glob('*SKYOPC*')
     file_dates = np.asarray([(dt.datetime.strptime(f[-14:-4], '%Y-%m-%d')).date() for f in all_files])
@@ -210,13 +244,12 @@ def extract_skyopc(start,stop,dpath,save=False):
     
         # Resample to minutly average
         new_index = pd.date_range(skyopc.index[0].round('min'),skyopc.index[-1].round('min'), freq='min')      
-        skyopc_1min = skyopc_counts.resample('1min').mean()
+        skyopc_1min = skyopc_counts.resample('1min').median()
         skyopc_1min = skyopc_1min.reindex(new_index)
     
         # QC
         skyopc_qcd = qc_aerosol(skyopc_1min)
         
-    
         if save: 
             skyopc_qcd.to_csv(save+'SKYOPC_%s'%(str(start.date())))
             skyopc_params.to_csv(save+'SKYOPC_params_%s'%(str(start.date())))
@@ -228,9 +261,22 @@ def extract_skyopc(start,stop,dpath,save=False):
 
 
 
-## Get OPC data
     
 def extract_opc(opc_n,start,stop,dpath,save=False):
+    """
+    Extracts alphasense-N3 opc data from raw output. 
+    QC's for bad data. 
+    resamples to 1 minutely median
+    Saves as .csv if requested
+    
+    Parameters:
+        ocp_n: name, 'MSF' or 'TAWO'
+        start: Start datetime for processing
+        stop:  Stop datetime for processing
+        dpath: Raw data filepath
+        save:  Output directory (optional)
+    
+    """
     os.chdir(dpath)                  # Change directory to where the data is
     all_files = glob.glob('*%s*OPC*'%opc_n)
     if opc_n=='TAWO':
@@ -271,20 +317,17 @@ def extract_opc(opc_n,start,stop,dpath,save=False):
         # Convert total counts/second to counts/cm3
         opc_counts = opc_counts.divide(opc.FlowRate, axis=0)
     
-    
         # QC for OPC params. 
         opc_counts[opc_params['period']>500] = np.nan
         opc_counts[opc_params['period']<400] = np.nan
 
-    
         # Resample to minutly average
         new_index = pd.date_range(opc_counts.index[0].round('min'),opc_counts.index[-1].round('min') , freq='min')      
-        opc_1min = opc_counts.resample('1min').mean()
+        opc_1min = opc_counts.resample('1min').median()
         opc_1min = opc_1min.reindex(new_index)
     
         # QC for winds and flight days
         opc_qc = qc_aerosol(opc_1min)
-    
     
         # Save if neccessary
         if save: 
@@ -297,10 +340,23 @@ def extract_opc(opc_n,start,stop,dpath,save=False):
         return
 
 
-# Function to read and process CLASP data
-# Inputs
 
 def get_clasp(d_loc,d1,d2,claspn,calfile,save=False):
+    """
+    Extracts clasp data from raw output. 
+    QC's for bad data. 
+    QC-ing for CLASP parameters is currently not implemented. 
+    resamples to 1 minutely median
+    Saves as .csv if requested
+    
+    Parameters:
+        d1:     Start datetime for processing
+        d2:     Stop datetime for processing
+        d_loc:  Raw data filepath
+        claspn: CLASP name, i.e. 'CLASP_F'
+        save:   Output directory (optional)
+    
+    """
     # Function to convery interger to binary.
     get_bin = lambda x, n: format(x, 'b').zfill(n)
     os.chdir(d_loc)                  # Change directory to where the data is
@@ -308,14 +364,6 @@ def get_clasp(d_loc,d1,d2,claspn,calfile,save=False):
     file_dates = np.asarray([(dt.datetime.strptime(f[-14:-4], '%Y-%m-%d')).date() for f in all_files])
     idxs = np.where(np.logical_and(file_dates>=d1.date(), file_dates<=d2.date()))[0]
     dfs = [all_files[i] for i in idxs]
-
-    #CLASP = np.ones([np.shape(data_block)[0],16])*-999  # Counts
-    #statusaddr = np.ones(np.shape(data_block)[0])*-999  # Status address
-    #parameter = np.ones(np.shape(data_block)[0])*-999   # Parameter value
-    #overflow = np.ones(np.shape(data_block)[0])*-999    # Overflow (channel 1-8 only)
-    #flow_check = np.ones(len(data_block))*-999  # True if flow is in range - this is too stringent, can ignore
-    #heater = np.ones(np.shape(data_block)[0])*-999      # True if heater is on
-    #sync = np.ones(len(data_block))*-999       # CAN IGNORE THIS - it's not connected
 
     # Loop through, extract and sort data into the dataframes initialised above
     #for i in range(0,np.shape(data_block)[0]):
@@ -387,7 +435,7 @@ def get_clasp(d_loc,d1,d2,claspn,calfile,save=False):
    
         # Resample to minutly average
         new_index = pd.date_range(CLASP.index[0].round('min'),CLASP.index[-1].round('min'), freq='min')      
-        CLASP_1min = CLASP.resample('1min').mean()
+        CLASP_1min = CLASP.resample('1min').median()
         CLASP_1min = CLASP_1min.reindex(new_index)
 
         # Apply flow corrections and quality flags, 
@@ -424,9 +472,20 @@ def get_clasp(d_loc,d1,d2,claspn,calfile,save=False):
 
 
 
-
-# Plot aerosol size distribution spectra
 def get_dist(df,nbins,bounds):
+    """
+    Calculateds dNdlogd from aerosol size distribution
+    
+    Parameters:
+        df:     Size distribution
+        nbins:  total number of bins
+        bounds: Bin boundaries (list of length nbins+1) 
+        
+    Returns: 
+        mid_points: Bin mid-points
+        dNdlogd
+    
+    """
     if len(bounds)!=nbins+1:
         print('Error bounds')
         return
@@ -438,4 +497,111 @@ def get_dist(df,nbins,bounds):
     hist = df.sum(axis=0)
     dNdlogd = hist/dlogd
     return mid_points,dNdlogd
+
+
+def plot_dist(dists,labels,xlims):
+    """
+    Plots aerosol size distributions
+    
+    Parameters:
+        dists:  list of size distributions to plot (dNdlogd)
+        labels: Names for legend
+        xlims:  x-axis (particle diameter) limits 
+        
+    Returns: 
+        fig: Size distribution plot
+    
+    """
+    import matplotlib.pyplot as plt
+    fig = plt.figure(figsize=(6,4))
+    ax = fig.add_subplot(111)
+    ax.grid(True)
+    for i in range(0,len(dists)):
+        ax.loglog(dists[i][0],dists[i][1],label=labels[i])
+
+    ax.set_xlim(xlims[0],xlims[1])
+    ax.set_xlabel('Diameter (d) / $\mu$m')
+    ax.set_ylabel('dN/dlogd (cc$^{-3}$)')
+    ax.legend(loc='best',fontsize=10)
+    fig.tight_layout()
+    
+    return fig
+
+
+def get_cpc(start,stop,d_loc):
+    """
+    Retrieves CPC data from .csv output of extract_cpc_data
+    
+    Parameters:
+        start:      Start datetime for processing
+        stop:       Stop datetime for processing
+        d_loc:      data filepath
+        
+    Returns:
+        CPC dataframe
+    
+    """
+    f_date_list = pd.date_range(start.date(),stop.date(),freq='1D')
+    CPC_out = pd.DataFrame(columns=['c/cm3', 'QC'])
+    for date in f_date_list:
+        f = d_loc + r'CPC_%s'%(str(date.date()))
+        
+        try:
+            data = pd.read_csv(f,parse_dates=[0],index_col=[0])
+        except:
+            print('No data for %s'%str(date.date()))
+            continue
+
+        CPC_out = CPC_out.append(data,sort=True)    
+    
+    # Get rid of any duplicates
+    CPC_out = CPC_out[~CPC_out.index.duplicated()]
+    
+    # Fill any missing minutes with nans
+    new_index = pd.date_range(start,stop-pd.Timedelta(minutes=1), freq='min')
+    CPC_out = CPC_out.reindex(new_index)
+    
+    # Crop to datetime
+    CPC_out=CPC_out[start:stop]
+    
+    return CPC_out
+
+
+def get_skyopc(start,stop,d_loc):
+    """
+    Retrieves skyopc data from .csv output of extract_skyopc_data
+    
+    Parameters:
+        start:      Start datetime for processing
+        stop:       Stop datetime for processing
+        d_loc:      data filepath
+        
+    Returns:
+        skyopc dataframe
+    
+    """
+    f_date_list = pd.date_range(start.date(),stop.date(),freq='1D')
+    SKY_out = pd.DataFrame(columns=list(np.arange(0,31,1))+['QC'])
+    for date in f_date_list:
+        f = d_loc + r'SKYOPC_%s'%(str(date.date()))
+        
+        try:
+            data = pd.read_csv(f,parse_dates=[0],index_col=[0],skiprows=1,names=list(np.arange(0,31,1))+['QC'])
+        except:
+            print('No data for %s'%str(date.date()))
+            continue
+        
+        SKY_out = SKY_out.append(data,sort=True)    
+    
+    # Get rid of any duplicates
+    SKY_out = SKY_out[~SKY_out.index.duplicated()]
+    
+    # Fill any missing minutes with nans
+    new_index = pd.date_range(start,stop-pd.Timedelta(minutes=1), freq='min')
+    SKY_out = SKY_out.reindex(new_index)
+    
+    # Crop to datetime
+    SKY_out=SKY_out[start:stop]
+    
+    return SKY_out
 

@@ -20,10 +20,10 @@ from flux_functions import *
 d_loc = '/Volumes/Data/ICECAPSarchive/fluxtower/processed/'
 
 # Start and stop date:
-start = dt.datetime(2019,6,1,0,0)
-stop = dt.datetime(2019,8,6,0,0)
+start = dt.datetime(2019,11,21,0,0)
+stop = dt.datetime(2019,11,27,0,0)
 
-avp = 30  # Averaging time in minutes. 
+avp = 15  # Averaging time in minutes. 
 Z = 1.2   # Measurement altitude in m
 sf = 10   # sampling frequency (10Hz)
 
@@ -87,6 +87,8 @@ for day in days:
 
     if os.path.isfile(d_loc+'LiCOR/licor_%s'%day_str):
         licor = pd.read_csv(d_loc+'LiCOR/licor_%s'%day_str, index_col=0, parse_dates=[0])
+        # QC licor data
+        licor[licor['QC']!=1]=np.nan
     else:
         print('Error: File empty, '+day_str)
         continue
@@ -386,6 +388,8 @@ for day in days:
             
             
 # 25) Save daily flux, QC and cospec<wu> estimates
+            
+    
 
     flux_out.to_csv(d_loc+'TurbulentFluxes/Flux_estimates/Flux_estimates_%smin_%s.csv'%(avp,day_str))
     QC_out.to_csv(d_loc+'TurbulentFluxes/Flux_QC/Flux_QC_%smin_%s.csv'%(avp,day_str))

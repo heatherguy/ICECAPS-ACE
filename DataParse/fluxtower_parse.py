@@ -1,30 +1,38 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Created on Thurs March 12 17:22:21 2020
+
+@author: Heather Guy
+
+Various functions for parsing data from the ICECAPS-ACE fluxtower suite.
+"""
 
 # Import functions
-import matplotlib
-matplotlib.use('Agg')
 import warnings
 warnings.filterwarnings("ignore")
-#%matplotlib inline
 import numpy as np       
-import datetime as dt    
-import pylab as plb
-import matplotlib
-import matplotlib.pyplot as plt
-import matplotlib.dates as md
-from matplotlib import rc
-from matplotlib import rcParams
 import glob
 import os
 import io
-import itertools
 import datetime
 import pandas as pd
-from scipy.signal import medfilt, detrend, coherence, windows
+from scipy.signal import medfilt
 
-# filter for clear outliers - replace with median filtered values
-# set limit at 3*standard deviation
+
 def replace_outliers(var,sd):
-    # replace outliers with median filter
+    """
+    Filter for clear outliers - replace with median filtered values
+    Limit is 3*standard deviation
+    
+    Parameters:
+        var: input variable
+        sd:  standard deviation
+        
+    Returns:
+        var with median filter applied.
+    
+    """
     var=var.astype(float)
     jj = ~np.isnan(var) # Ignore nans
     temp = var[jj]
@@ -37,10 +45,26 @@ def replace_outliers(var,sd):
     return var_clean
 
 
-# KT15 parsing function
+
 def extract_KT_data(start,stop,dpath,qcf,save=False):
-    # Extract KT15 data into a pandas array
-    # Data format: YYYY MM DD HH MM.mmm TT.tt C
+    """
+    Extracts KT15 data from raw output. 
+    Resamples to 1 minute averaging time. 
+    QC's for bad data from log.
+    Saves as .csv if requested
+    
+    Parameters:
+        start: Start datetime for processing
+        stop:  Stop datetime for processing
+        dpath: Raw data filepath
+        qcf:   Filepath for qc log file
+        save:  Output directory (optional)
+        
+    Returns:
+        Clean KT15 dataframe
+    
+    """
+    # Raw data format: YYYY MM DD HH MM.mmm TT.tt C
     # TT.tt = temperature, C = celcius
 
     os.chdir(dpath)                  # Change directory to where the data is
@@ -85,11 +109,9 @@ def extract_KT_data(start,stop,dpath,qcf,save=False):
         if np.shape(KT)[1]==2:
             KT.columns = ['T', 'Units']
             KT = KT.sort_values('Date')
-            #new_idx = pd.date_range(pd.to_datetime(str(start_f),format='%y%m%d'),pd.to_datetime(str(stop_f),format='%y%m%d'),freq='1s' )
             KT.index = pd.DatetimeIndex(KT.index)
             KT = KT[~KT.index.duplicated()]
-            #KT= KT.reindex(new_idx, fill_value=np.NaN)
-
+            
             # Resample to 1 minute averages. 
             new_index = pd.date_range(KT.index[0].round('min'),KT.index[-1].round('min') , freq='min')      
             KT_1min = KT.resample('1min').mean()
@@ -128,19 +150,38 @@ def extract_KT_data(start,stop,dpath,qcf,save=False):
 
     return KT
 
-# SnD parsing
 
-def extract_snd_data(start,stop,dpath,log_snd):
-#aa;D.DDD;QQQ; VVVVV;CC
-#aa = 33 (serial address of sensor)
-#D.DDD = Distance to target in m (will need temperature adjustment
-#QQQ = Data quality, varies beteen 152-600, 600 is the poorest quality
-#VVVVV = diagnostic tests (only first two are actually something), 1 = pass. 
-#CC = two-character checksum of data packet. (indication of data errors? Not sure how to read this. )
+
+
+def extract_snd_data(start,stop,dpath,hmp_dpath,save=False):
+    """
+    Extracts SnD data from raw output.
+    Applies temperature correction. 
+    QC's for bad data.
+    Saves as .csv if requested
+    
+    Parameters:
+        start:       Start datetime for processing
+        stop:        Stop datetime for processing
+        dpath:       Raw data filepath
+        hmp_dpath:   Filepath for clean HMP1 data for temperature
+        save:  Output directory (optional)
+        
+    Returns:
+        Clean SnD dataframe
+    
+    """
+    
+    # Raw data format
+    #aa;D.DDD;QQQ; VVVVV;CC
+    #aa = 33 (serial address of sensor)
+    #D.DDD = Distance to target in m (will need temperature adjustment
+    #QQQ = Data quality, varies beteen 152-600, 600 is the poorest quality
+    #VVVVV = diagnostic tests (only first two are actually something), 1 = pass. 
+    #CC = two-character checksum of data packet.
     
     os.chdir(dpath)                  # Change directory to where the data is
-    log = open(log_snd,'w')             # Open the log file for writing
-    all_files = glob.glob('*.SnD')  # List all data files
+    all_files = glob.glob('*.SnD')   # List all data files
 
     # Get start and stop filenames
     start_f = int(start.strftime("%y%m%d"))
@@ -148,7 +189,7 @@ def extract_snd_data(start,stop,dpath,log_snd):
 
     # Extract daterange
     file_dates = np.asarray([int(f[0:6]) for f in all_files])
-    idxs = np.where(np.logical_and(file_dates>=start_f, file_dates<stop_f))[0]
+    idxs = np.where(np.logical_and(file_dates>=start_f, file_dates<=stop_f))[0]
     dfs = [all_files[i] for i in idxs]
 
     # Initialise empty data frames
@@ -158,11 +199,11 @@ def extract_snd_data(start,stop,dpath,log_snd):
     for f in dfs: 
         # Ignore file if it's empty
         if os.path.getsize(f)==0:
-            log.write('Error with: '+f+' this file is empty.\n')
+            print('Error with: '+f+' this file is empty.\n')
             continue
         
         dat_lines =open(f).readlines()
-        good_lines = [y for y in dat_lines if len(y)==49]
+        good_lines = [y for y in dat_lines if len(y)==48]
         date =[]
         x=[]
         Q=[]
@@ -179,37 +220,53 @@ def extract_snd_data(start,stop,dpath,log_snd):
                 x.append(np.nan)
 
         snd = snd.append(pd.DataFrame({'Date':date,'depth':x,'Q':Q,'V':V,'C':C}))
+        
     
     if snd.empty==False:
         snd = snd.set_index('Date')
         snd = snd.sort_values('Date')
-    #    new_idx = pd.date_range(pd.to_datetime(str(start_f),format='%y%m%d'),pd.to_datetime(str(stop_f),format='%y%m%d'),freq='min' )
         snd.index = pd.DatetimeIndex(snd.index)
         snd = snd[~snd.index.duplicated()]
-    #   snd= snd.reindex(new_idx, fill_value=np.NaN)
-        
+
         # Check diagnostic tests pass.
-        snd = snd[snd['V'].astype(int)==11]
+        snd['depth'][snd['V'].astype(int)!=11]=np.nan
 
         # Check data quality
         snd['Q'] = snd['Q'].astype(int)
-        snd = snd[snd['Q']>151]
+        snd['depth'][snd['Q']<151]=np.nan
+        snd['depth']=replace_outliers(snd['depth'],snd['depth'].std())
+        
+        # Correct for temperature
+        HMP1 = get_hmp(start,stop,hmp_dpath,'HMP1')
+        tc = HMP1['Ta']
+        tk = tc + 273.15 # convert to celcius    
+        snd['HMP1_T'] = tk
+        snd['depth_Tcorrected'] = snd['depth'] * np.sqrt(snd['HMP1_T']/273.15)
 
         # Check for crazy values
-        snd['diff']=snd['depth'].diff()
-        snd = snd[np.abs(snd['diff'])<0.1] # Ignore if 10 minute change greater than 10cm in 10 minutes
-        
-    else: 
-        log.write('No data from snd\n')
+        snd['depth_Tcorrected']=replace_outliers(snd['depth_Tcorrected'],snd['depth_Tcorrected'].std())
        
-    log.write('Data parse finished\n')
-    log.close()
+        if save: 
+            snd.to_csv(save+'snd_%s'%(str(start.date())))
+            
+    else: 
+        print('No data from snd\n')
+       
 
     return snd
 
-# HMP155 parsing
+
+
 
 def HMP_pdf_sort(df,start,stop):
+    """
+    Sorts date referencing and columns for raw HMP data.
+    Called by extract_HMP_data
+           
+    Returns:
+        Clean df
+    
+    """
     # Sort out the date referencing and columns
     if df.empty==False:
         df = df.dropna()
@@ -227,23 +284,33 @@ def HMP_pdf_sort(df,start,stop):
         df['RH']=df['RH'].astype(float)
         df['Tw']=df['Tw'].astype(float)
         df['Ta']=df['Ta'].astype(float)
-        #df['h']=df['h'].astype(int)       
         df = df.sort_values('Date')
-        #new_idx = pd.date_range(pd.to_datetime(start).round('1s'),pd.to_datetime(stop).round('1s'),freq='1s' )
         df.index = pd.DatetimeIndex(df.index)
         df = df[~df.index.duplicated()]
-        #df= df.reindex(new_idx, method='nearest')
     else:
         df = pd.DataFrame(columns=['RH', 'Ta', 'Tw', 'Err', 'h'])
     return df
 
-def extract_HMP_data(name, start,stop,dpath,logf,save=False):
-    # Extract HMP155 data into a pandas array
-    # Data format: YYYY MM DD HH MM.mmm TT:TT:TT RH Ta Tw Err hs
+def extract_HMP_data(name,start,stop,dpath,save=False):
+    """
+    Extracts HMP155 data from raw output. 
+    Saves as .csv if requested
+    
+    Parameters:
+        name:  Sensor name ('HMP1', 'HMP2', 'HMP3' or 'HMP4')
+        start: Start datetime for processing
+        stop:  Stop datetime for processing
+        dpath: Raw data filepath
+        save:  Output directory (optional)
+        
+    Returns:
+        Clean HMP dataframe
+    
+    """
+    # Raw data format: YYYY MM DD HH MM.mmm TT:TT:TT RH Ta Tw Err hs
     # Ta = seperate probe T, Tw = wetbulb t, hs = heating status
 
-    os.chdir(dpath)                  # Change directory to where the data is
-    log = open(logf,'w')             # Open the log file for writing
+    os.chdir(dpath)                     # Change directory to where the data is
     all_files = glob.glob('*.%s'%name)  # List all data files
     
     # Get start and stop filenames
@@ -262,7 +329,7 @@ def extract_HMP_data(name, start,stop,dpath,logf,save=False):
     for f in dfs:
         # Ignore file if it's empty 
         if os.path.getsize(f)==0:
-            log.write('Error with: '+f+' this file is empty.\n')
+            print('Error with: '+f+' this file is empty.')
             continue
         
         fd = io.open(f,"r",errors='replace')
@@ -273,39 +340,63 @@ def extract_HMP_data(name, start,stop,dpath,logf,save=False):
         final_df = pd.DataFrame(pdf[1].values.tolist(), columns=['Year','Month','Day','Hour','Minute','Second','junk','RH','Ta', 'Tw', 'Err', 'h'])
         # Store good data
         HMP = HMP.append(final_df)
-        
- 
+     
     # Sort out the date referencing and columns
     HMP = HMP_pdf_sort(HMP,start,stop)
 
-    log.write('Data parse finished\n')
     if save: 
         HMP.to_csv(save+'%s_%s'%(name,str(start.date())))
-        log.write('Saved csv')
+        print('Saved csv')
 
-    log.close()
     return HMP
 
-# Ventus parsing
+
 
 def ventus_pdf_sort(df,start,stop):
+    """
+    Sorts date referencing and columns for raw 2D sonic data.
+    Called by extract_ventus_data
+           
+    Returns:
+        Clean df
+    
+    """
     # Sort out the date referencing and columns
     if df.empty==False:
-        df[5] = df[5].astype(int)
-        df['Date'] = pd.to_datetime(df[0]*10000000000+df[1]*100000000+df[2]*1000000+df[3]*10000+df[4]*100+df[5],format='%Y%m%d%H%M%S')
-        df = df.set_index('Date')
-        del df[0],df[1],df[2],df[3],df[4],df[5]
-        df.columns = ['wsd', 'wdir', 'T', 'Checksum']
-        df = df.sort_values('Date')
-        new_idx = pd.date_range(pd.to_datetime(str(start),format='%y%m%d'),pd.to_datetime(str(stop),format='%y%m%d'),freq='1s' )
-        df.index = pd.DatetimeIndex(df.index)
-        df = df[~df.index.duplicated()]
-        df= df.reindex(new_idx, fill_value=np.NaN)
+        try:
+            df[5] = df[5].astype(int)
+            df['Date'] = pd.to_datetime(df[0]*10000000000+df[1]*100000000+df[2]*1000000+df[3]*10000+df[4]*100+df[5],format='%Y%m%d%H%M%S')
+            df = df.set_index('Date')
+            del df[0],df[1],df[2],df[3],df[4],df[5]
+            df.columns = ['wsd', 'wdir', 'T', 'Checksum']
+            df = df.sort_values('Date')
+            new_idx = pd.date_range(start,stop,freq='1s' )
+            df.index = pd.DatetimeIndex(df.index)
+            df = df[~df.index.duplicated()]
+            df= df.reindex(new_idx, fill_value=np.NaN)
+        except:
+            df = pd.DataFrame()
+            print('Bad data')
     return df
 
-def extract_ventus_data(start,stop,dpath,log_ventus,save=False):
-    # Extract Ventus data into a pandas array
-    # Data format:
+
+def extract_ventus_data(start,stop,dpath,save=False):
+    """
+    Extracts 2D sonic data from raw output. 
+    QC's for bad data. 
+    Saves as .csv if requested
+    
+    Parameters:
+        start: Start datetime for processing
+        stop:  Stop datetime for processing
+        dpath: Raw data filepath
+        save:  Output directory (optional)
+        
+    Returns:
+        v1, v2: Clean dataframes of lower 2D sonic (v1) and upper (v2)
+    
+    """
+    # Raw Data format:
     #<STX>SS.S DDD +TT.T xx*XX<CR><ETX>
     #        SS.S = wind speed (m/s)
     #        DDD = wind direction
@@ -313,8 +404,7 @@ def extract_ventus_data(start,stop,dpath,log_ventus,save=False):
     #        xx = status
     #        XX = checksum
 
-    os.chdir(dpath)                  # Change directory to where the data is
-    log = open(log_ventus,'w')             # Open the log file for writing
+    os.chdir(dpath)                     # Change directory to where the data is
     all_files = glob.glob('*.ventus*')  # List all data files
 
     # Get start and stop filenames
@@ -334,14 +424,18 @@ def extract_ventus_data(start,stop,dpath,log_ventus,save=False):
     for f in dfs: 
         # Ignore file if it's empty or contains non-ascii characters
         if os.path.getsize(f)==0:
-            log.write('Error with: '+f+' this file is empty.\n')
+            print('Error with: '+f+' this file is empty.')
             continue
         # Filter and report files with non-ascii characters
-        content = open(f).read()
+        try:
+            content = open(f).read()
+        except UnicodeDecodeError:
+            print("Error with: %s contains non-ascii characters."%f)  
+            continue
         try:
             content.encode('ascii')
         except UnicodeDecodeError:
-            log.write("Error with: %s contains non-ascii characters.\n"%f)  
+            print("Error with: %s contains non-ascii characters."%f)  
             continue
             
         if f[-1]=='1':
@@ -350,39 +444,73 @@ def extract_ventus_data(start,stop,dpath,log_ventus,save=False):
             v2 = v2.append(pd.read_csv(f, header=None, delim_whitespace=True, error_bad_lines=False))
         
     # Sort out the date referencing and columns
-    v1 = ventus_pdf_sort(v1,start_f,stop_f)
-    v2 = ventus_pdf_sort(v2,start_f,stop_f)
+    v1 = ventus_pdf_sort(v1,start,stop)
+    v2 = ventus_pdf_sort(v2,start,stop)
     
     # Convert to numeric
-    v1['wsd'] = pd.to_numeric(v1['wsd'].str.split(pat='\x02',expand=True)[1],errors='coerce')
-    v2['wsd'] = pd.to_numeric(v2['wsd'].str.split(pat='\x02',expand=True)[1],errors='coerce')
-    v1['wdir'] = pd.to_numeric(v1['wdir'],errors='coerce')
-    v2['wdir'] = pd.to_numeric(v2['wdir'],errors='coerce')
-    v1['T'] = pd.to_numeric(v1['T'],errors='coerce')
-    v2['T'] = pd.to_numeric(v2['T'],errors='coerce')
+    if v1.empty==False:
+        v1['wsd'] = pd.to_numeric(v1['wsd'].str.split(pat='\x02',expand=True)[1],errors='coerce')
+        v1['wdir'] = pd.to_numeric(v1['wdir'],errors='coerce')
+        v1['T'] = pd.to_numeric(v1['T'],errors='coerce')
+
+        # Add qc column
+        v1['QC'] = np.ones(len(v1))
+
+        # Check for bad data
+        # Check checksum, status should be 08 (heating on) or 00
+        v1['status']= v1['Checksum'].str.split(pat='*',expand=True)[0]
+        v1['QC'][(v1['status']!='08') & (v1['status']!='00')]=2
+        v1['QC'][v1.isnull().any(axis=1)]=0
+    else:
+        print('No data for v1')
     
-    # Check for bad data
-    # Check checksum, status should be 08 (heating on) or 00
-    v1['status']= v1['Checksum'].str.split(pat='*',expand=True)[0]
-    v1 = v1[(v1['status']=='08') | (v1['status']=='00')]
-    v2['status']= v2['Checksum'].str.split(pat='*',expand=True)[0]
-    v2 = v2[(v2['status']=='08') | (v2['status']=='00')]
+        # Convert to numeric
+    if v2.empty==False:
+        v2['wsd'] = pd.to_numeric(v2['wsd'].str.split(pat='\x02',expand=True)[1],errors='coerce')
+        v2['wdir'] = pd.to_numeric(v2['wdir'],errors='coerce')
+        v2['T'] = pd.to_numeric(v2['T'],errors='coerce')
+
+        # Add qc column
+        v2['QC'] = np.ones(len(v2))
+
+        # Check for bad data
+        # Check checksum, status should be 08 (heating on) or 00
+        v2['status']= v2['Checksum'].str.split(pat='*',expand=True)[0]
+        v2['QC'][(v2['status']!='08') & (v2['status']!='00')]=2
+        v2['QC'][v2.isnull().any(axis=1)]=0
+    else:
+        print('No data for v2')
+
         
-    log.write('Data parse finished\n')
+    #print('Data parse finished\n')
     if save: 
         v1.to_csv(save+'v1_%s'%(str(start.date())))
         v2.to_csv(save+'v2_%s'%(str(start.date())))
-        log.write('Saved csv')
+        #print('Saved csv')
 
-    log.close()
     return v1,v2
 
 
-# Metek parsing
+
 
 def extract_metek_data(start,stop,dpath,save=False):
-    # Extract metek data into a pandas array
-    # Data format:
+    """
+    Extracts 3D sonic data from raw output. 
+    Cleans bad data.
+    Converts to SI units.
+    Saves as .csv if requested
+    
+    Parameters:
+        start: Start datetime for processing
+        stop:  Stop datetime for processing
+        dpath: Raw data filepath
+        save:  Output directory (optional)
+        
+    Returns:
+        m1, m2: Clean dataframe for lower 3D sonic (m1) and upper (m2)
+    
+    """
+    # raw data format:
     #2019 04 02 16 23 41.734 M:x =    14 y =    -1 z =    12 t =  2357
     # M = measured data heater off
     # H = measured data heater on
@@ -390,7 +518,7 @@ def extract_metek_data(start,stop,dpath,save=False):
     # x,y,z componenets of wind in cm/s
     # t = acoustic temperature 2357 = 23.57C
     
-    os.chdir(dpath)                  # Change directory to where the data is
+    os.chdir(dpath)                    # Change directory to where the data is
     all_files = glob.glob('*.metek*')  # List all data files
 
     # Get start and stop filenames
@@ -509,13 +637,26 @@ def extract_metek_data(start,stop,dpath,save=False):
 
 
 
-
-# Licor parsing
-
 def extract_licor_data(start,stop,dpath,save=False):
-
-#2019 04 03 11 11 56.453 89	189	0.16469	35.4518	0.04404	297.105	20.74	99.0	1.5224
-# Date, Ndx, DiagVal, CO2R, CO2D, H2OR, H2OD, T, P, cooler
+    """
+    Extracts licor data from raw output. 
+    Corrects for data transmission delay. 
+    QC's licor data. 
+    Saves as .csv if requested
+    
+    Parameters:
+        start: Start datetime for processing
+        stop:  Stop datetime for processing
+        dpath: Raw data filepath
+        save:  Output directory (optional)
+        
+    Returns:
+        Clean licor dataframe
+    
+    """
+    # Raw data format: 
+    #2019 04 03 11 11 56.453 89	189	0.16469	35.4518	0.04404	297.105	20.74	99.0	1.5224
+    # Date, Ndx, DiagVal, CO2R, CO2D, H2OR, H2OD, T, P, cooler
 
     os.chdir(dpath)                  # Change directory to where the data is
     all_files = glob.glob('*.licor')  # List all data files
@@ -610,6 +751,8 @@ def extract_licor_data(start,stop,dpath,save=False):
     #Example: a value is 125 (01111101) indicates Chopper not ok, and AGC = 81% (1101 is 13,
     #times 6.25)
     try: 
+        #   For now 1 is good, zero is bad, 2=no met data
+        licor['QC']=np.ones(len(licor))
         diag_list = licor['DiagV'].to_list()
         chopper = []
         detector = []
@@ -632,21 +775,21 @@ def extract_licor_data(start,stop,dpath,save=False):
         licor['agc']=agc
 
         # Filter out bad values
-        licor = licor[licor['chopper']==1]
-        licor = licor[licor['detector']==1]
-        licor = licor[licor['pll']==1]
-        licor = licor[licor['sync']==1]
-        licor = licor[licor['agc']<90]
+        #licor['QC'][licor['chopper']==0] = 0 
+        #licor['QC'][licor['detector']==0] = 0
+        licor['QC'][licor['pll']==0] = 0
+        licor['QC'][licor['sync']==0] = 0
+        licor['QC'][licor['agc']>90] = 0
         
         # Delete now useless params
-        del licor['chopper'],licor['detector'],licor['pll'],licor['sync']
+        #del licor['chopper'],licor['detector'],licor['pll'],licor['sync']
 
         # Clean pressure for values over 80000 or under 50000
         # Clean temperature for values under 200 or over 300
-        licor = licor[licor['P']>50000]
-        licor = licor[licor['P']<80000]
-        licor = licor[licor['T']>200]
-        licor = licor[licor['T']<300]
+        licor['QC'][licor['P']<50000]=0
+        licor['QC'][licor['P']>80000]=0
+        licor['QC'][licor['T']<200]=0
+        licor['QC'][licor['T']>300]=0
 
         # Filter clear outliers.
         jj = ~np.isnan(licor['H2OD']) # Not nan indices
@@ -660,3 +803,246 @@ def extract_licor_data(start,stop,dpath,save=False):
         print('QC error. No data. \n')
 
     return licor    
+
+def get_kt(start,stop,d_loc):
+    """
+    Retrieves KT15 from .csv output of extract_kt_data
+    
+    Parameters:
+        start:      Start datetime for processing
+        stop:       Stop datetime for processing
+        d_loc:      data filepath
+        
+    Returns:
+        KT dataframe
+    
+    """
+    f_date_list = pd.date_range(start.date(),stop.date(),freq='1D')
+    KT_out = pd.DataFrame(columns=['T','Units','QC'])
+    for date in f_date_list:
+        f = d_loc + r'KT_%s'%(str(date.date()))
+        try:
+            data = pd.read_csv(f,parse_dates=[0],index_col=[0])
+        except:
+            print('No data for %s'%str(date.date()))
+            continue
+
+        KT_out = KT_out.append(data,sort=True)    
+    
+    # Get rid of any duplicates
+    KT_out = KT_out[~KT_out.index.duplicated()]   
+    # Crop to datetime
+    KT_out=KT_out[start:stop]
+    
+    # Fill any missing minutes with nans
+    new_index = pd.date_range(KT_out.index[0],KT_out.index[-1] , freq='min')
+    KT_out = KT_out.reindex(new_index)
+    
+    return KT_out
+
+
+def get_hmp(start,stop,d_loc,hmp_name):
+    """
+    Retrieves HMP155 from .csv output of extract_hmp_data
+    QC's hmp data
+    resamples to one minutely averages.
+    
+    Parameters:
+        start:      Start datetime for processing
+        stop:       Stop datetime for processing
+        d_loc:      data filepath
+        hmp_name:   sensor name (HMP1, HMP2, HMP3, or HMP4)
+
+        
+    Returns:
+        HMP dataframe
+    
+    """
+    f_date_list = pd.date_range(start.date(),stop.date(),freq='1D')
+    out = pd.DataFrame(columns=['Date','RH','Ta','Tw','Err','h'])
+    out2 = pd.DataFrame(columns=['RH','Ta','QC'])
+    for date in f_date_list:
+        f = d_loc + r'%s_%s'%(hmp_name,str(date.date()))
+        try:
+            data = pd.read_csv(f,parse_dates=[0],index_col=[0])
+        except:
+            print('No data for %s'%str(date.date()))
+            continue
+
+        out = out.append(data,sort=True)    
+    
+    # Get rid of any duplicates
+    out = out[~out.index.duplicated()]   
+    # Crop to datetime
+    out=out[start:stop]
+    qc = np.ones(len(out))
+    qc[out['Err']!=0]= 2
+    qc[out['Ta'].isnull()] = 0
+    out['QC']=qc
+    
+    # Resample to one minutely
+    out2['Ta'] = out['Ta'].resample(rule = '1min', how='mean')
+    out2['RH'] = out['RH'].resample(rule = '1min', how='mean')
+    out2['QC'] = out['QC'].resample(rule = '1min', how='max')
+    # Fill any missing minutes with nans
+    new_index = pd.date_range(start,stop-pd.Timedelta(minutes=1), freq='1min')
+    out2 = out2.reindex(new_index)
+    
+    return out2
+
+
+def get_ventus(start,stop,d_loc,name, avp='1min'):
+    """
+    Retrieves 2D sonic data from .csv output of extract_ventus_data
+    Resamples to requested averaging time (default=1 minutely)
+    
+    Parameters:
+        start:  Start datetime for processing
+        stop:   Stop datetime for processing
+        d_loc:  data filepath
+        name:   sensor name, lower='v1', upper='v2'
+        avp:    Resamples to avp averaging period in minutes (default = '1min')
+        
+    Returns:
+        2D sonic dataframe
+    
+    """
+    f_date_list = pd.date_range(start.date(),stop.date(),freq='1D')
+    out = pd.DataFrame(columns=['Date','wsd','wdir','T','Checksum','QC','status'])
+    out2 = pd.DataFrame(columns=['wsd','wdir','T','QC'])    
+    for date in f_date_list:
+        f = d_loc + r'%s_%s'%(name,str(date.date()))
+        try:
+            data = pd.read_csv(f,parse_dates=[0],index_col=[0])
+        except:
+            print('No data for %s'%str(date.date()))
+            continue
+
+        out = out.append(data,sort=True)    
+    
+    # Get rid of any duplicates
+    out = out[~out.index.duplicated()]   
+    # Crop to datetime
+    out=out[start:stop]
+    
+    # Resample to one minutely
+    out2['T'] = out['T'].resample(rule = avp, how='mean')    
+    out2['QC'] = out['QC'].resample(rule = avp, how='max')
+    
+    # Convert to vectors
+    u,v = wind_to_uv(out['wsd'],out['wdir'])
+    
+    # average vectors
+    u_mean = u.resample(rule=avp, how='mean')
+    v_mean = v.resample(rule=avp, how='mean')
+    
+    # convert back to wsd and wdir
+    out2['wsd'] = wind_uv_to_spd(u_mean,v_mean)
+    out2['wdir'] = wind_uv_to_dir(u_mean,v_mean)
+
+    # Fill any missing minutes with nans
+    new_index = pd.date_range(start,stop-pd.Timedelta(minutes=1), freq=avp)
+    out2 = out2.reindex(new_index)
+    
+    return out2
+
+
+
+def get_metek(start,stop,d_loc,name, avp='1min'):
+    """
+    Retrieves 3D sonic data from .csv output of extract_metek_data
+    Resamples to requested averaging time (default=1 minutely)
+    
+    Parameters:
+        start:  Start datetime for processing
+        stop:   Stop datetime for processing
+        d_loc:  data filepath
+        name:   sensor name, lower='vm', upper='m2'
+        avp:    Resamples to avp averaging period in minutes (default = '1min')
+        
+    Returns:
+        3D sonic dataframe
+    
+    """
+
+    f_date_list = pd.date_range(start.date(),stop.date(),freq='1D')
+    out = pd.DataFrame(columns=['Date','Status','x','y','z','T','Logger_Date'])
+    out2 = pd.DataFrame(columns=['wsd','wdir','T','QC'])    
+    for date in f_date_list:
+        f = d_loc + r'%s_%s'%(name,str(date.date()))
+        try:
+            data = pd.read_csv(f,parse_dates=[0],index_col=[0])
+        except:
+            print('No data for %s'%str(date.date()))
+            continue
+
+        out = out.append(data,sort=True)    
+    
+    # Get rid of any duplicates
+    out = out[~out.index.duplicated()]   
+    # Crop to datetime
+    out=out[start:stop]
+    del out['Date']
+    # QC
+    out['QC']=np.ones(len(out))
+    out['QC'][out.isnull().any(axis=1)]=0
+    
+    # Resample to one minutely
+    out2['T'] = out['T'].resample(rule = avp, how='mean')    
+    out2['QC'] = out['QC'].resample(rule = avp, how='max')
+       
+    # average vectors
+    u_mean = out['x'].resample(rule=avp, how='mean')
+    v_mean = out['y'].resample(rule=avp, how='mean')
+    
+    # convert to wsd and wdir
+    out2['wsd'] = wind_uv_to_spd(u_mean,v_mean)
+    out2['wdir'] = wind_uv_to_dir(u_mean,v_mean)
+
+    # Fill any missing minutes with nans
+    new_index = pd.date_range(start,stop-pd.Timedelta(minutes=1), freq=avp)
+    out2 = out2.reindex(new_index)
+    
+    return out2
+
+
+def wind_to_uv(wspd,wdir):
+    """
+    calculated the u and v wind components from wind speed and direction
+    Input:
+        wspd: wind speed
+        wdir: wind direction
+    Output:
+        u: u wind component
+        v: v wind component
+    """    
+   
+    rad = 4.0*np.arctan(1)/180.
+    u = -wspd*np.sin(rad*wdir)
+    v = -wspd*np.cos(rad*wdir)
+
+    return u,v
+        
+def wind_uv_to_dir(U,V):
+    """
+    Calculates the wind direction from the u and v component of wind.
+    Takes into account the wind direction coordinates is different than the 
+    trig unit circle coordinate. If the wind directin is 360 then returns zero
+    (by %360)
+    Inputs:
+      U = west/east direction (wind from the west is positive, from the east is negative)
+      V = south/noth direction (wind from the south is positive, from the north is negative)
+    """
+    WDIR= (270-np.rad2deg(np.arctan2(V,U)))%360
+    return WDIR
+    
+def wind_uv_to_spd(U,V):
+    """
+    Calculates the wind speed from the u and v wind components
+    Inputs:
+      U = west/east direction (wind from the west is positive, from the east is negative)
+      V = south/noth direction (wind from the south is positive, from the north is negative)
+    """
+    WSPD = np.sqrt(np.square(U)+np.square(V))
+    return WSPD
+

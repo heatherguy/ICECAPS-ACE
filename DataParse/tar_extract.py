@@ -27,20 +27,20 @@ import datetime as dt
 # What data do you want to get?
 #dname = 'SKYOPC'
 #dname = 'Summit_MSF_ICECAPSACE_OPCN3'
-dname = 'KT'
+dname = 'CPC'
 
 #7,6,5,
 
 # Where are the raw .tar files?
 #dloc = '/Users/heather/ICECAPS-ACE/Data/raw/'
-#dloc = '/Volumes/Data/ICECAPSarchive/ace/raw/'
-dloc = '/Volumes/Data/ICECAPSarchive/fluxtower/raw/'
+dloc = '/Volumes/Data/ICECAPSarchive/ace/raw/'
+#dloc = '/Volumes/Data/ICECAPSarchive/fluxtower/raw/'
 
 # Where do you want to store the extracted .tar files? 
 #extract_out = '/Users/heather/ICECAPS-ACE/temp_data/'
 #extract_out = '/Volumes/Data/ICECAPSarchive/fluxtower/raw_extracted/Metek/'
-#extract_out = '/Volumes/Data/ICECAPSarchive/ace/Extracted/CLASP/'
-extract_out = '/Volumes/Data/ICECAPSarchive/fluxtower/raw_extracted/KT/'
+extract_out = '/Volumes/Data/ICECAPSarchive/ace/Extracted/CPC/'
+#extract_out = '/Volumes/Data/ICECAPSarchive/fluxtower/raw_extracted/Mentus/'
 
 # Extract all tar files. 
 extract_tar(dloc,extract_out,dname)
